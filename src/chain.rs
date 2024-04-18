@@ -1,6 +1,6 @@
 use biodivine_lib_param_bn::{
     biodivine_std::traits::Set,
-    symbolic_async_graph::{GraphColoredVertices, GraphVertices, SymbolicAsyncGraph},
+    symbolic_async_graph::{GraphColoredVertices, SymbolicAsyncGraph},
 };
 
 fn chain() {
@@ -32,7 +32,6 @@ impl ChainCalculator {
     fn chain_rec(
         // todo how to generate the subgraphs efficiently?
         _graph: &SymbolicAsyncGraph,
-        // todo remember to always intersect with this one after performing pred/post -> do not escape this subgraph
         _induced_subgraph_veritces: &GraphColoredVertices,
         _vertices_hint: &GraphColoredVertices,
         _sccs_dump: &mut Vec<GraphColoredVertices>,
@@ -60,7 +59,7 @@ impl ChainCalculator {
                     acc.union(&_graph.var_post(var_id, &current_layer))
                 })
                 // might want other way of inducing the subgraph, so that there are no such invalid edges
-                // for now, defensively intersect // todo do not forget this has to be everywhere
+                // for now, defensively intersect
                 .intersect(_induced_subgraph_veritces);
 
             if next_layer.is_empty() {
@@ -80,7 +79,7 @@ impl ChainCalculator {
                 .variables()
                 .clone()
                 .fold(_graph.mk_empty_colored_vertices(), |acc, var_id| {
-                    acc.union(&_graph.var_pre(var_id, &last_fwd_layer)) // todo why `last_fwd_layer`??
+                    acc.union(&_graph.var_pre(var_id, &restricted_bwd_reachable_acc))
                 })
                 // restrict to just the vertices that are in the scc
                 .intersect(&fwd_reachable);
