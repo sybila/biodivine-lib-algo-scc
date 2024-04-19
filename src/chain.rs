@@ -114,7 +114,7 @@ fn chain_rec(
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashSet;
+    use std::{collections::HashSet, path::PathBuf};
 
     use biodivine_lib_param_bn::{
         biodivine_std::traits::Set, symbolic_async_graph::SymbolicAsyncGraph, BooleanNetwork,
@@ -240,6 +240,12 @@ mod test {
         SymbolicAsyncGraph::new(&bool_network).unwrap()
     }
 
+    fn graph_from_file(filepath: &PathBuf) -> Result<SymbolicAsyncGraph, String> {
+        let bn = BooleanNetwork::try_from_file(filepath)?;
+        let graph = SymbolicAsyncGraph::new(&bn)?;
+        Ok(graph)
+    }
+
     #[test]
     fn compare_chain_fwdbwd_basic_graph() {
         let async_graph = basic_async_graph();
@@ -248,5 +254,81 @@ mod test {
         let fwdbwd_sccs = scc_decomposition(&async_graph).collect::<HashSet<_>>();
 
         assert_eq!(chain_sccs, fwdbwd_sccs);
+    }
+
+    #[test]
+    fn compare_chain_fwdbwd_some_dataset() {
+        // let dataset_path = PathBuf::from("/home/chudicek/Documents/fi/fi_08/sybila/colorful/cejn/datasets/[id-001]__[var-302]__[in-19]__[SIGNALING-IN-MACROPHAGE-ACTIVATION]/model.aeon");
+        // let async_graph = graph_from_file(&dataset_path).unwrap();
+        // assert!(!async_graph.unit_vertices().is_empty());
+
+        // println!(
+        //     "the colors size: {:?}",
+        //     async_graph.unit_colors().exact_cardinality()
+        // );
+
+        // let chain_sccs = chain(&async_graph).collect::<HashSet<_>>();
+        // let fwdbwd_sccs = scc_decomposition(&async_graph).collect::<HashSet<_>>();
+
+        // assert_eq!(chain_sccs, fwdbwd_sccs);
+
+        let dir_path =
+            PathBuf::from("/home/chudicek/Documents/fi/fi_08/sybila/colorful/cejn/datasets");
+
+        let entries = std::fs::read_dir(dir_path).unwrap();
+        // for entry in entries {
+        //     let entry = entry.unwrap();
+        //     let specific_dataset_dir = entry.path();
+        //     let aeon_file = specific_dataset_dir.join("model.aeon");
+
+        //     let async_graph = graph_from_file(&aeon_file).unwrap();
+
+        //     println!(
+        //         "the colors size: {:?}",
+        //         async_graph.unit_colors().exact_cardinality()
+        //     );
+        // }
+
+        let usable_datasets = entries
+            .filter_map(|entry| {
+                let entry = match entry {
+                    Ok(entry) => entry,
+                    Err(_) => return None,
+                };
+
+                match entry.file_type().unwrap().is_dir() {
+                    true => Some(entry),
+                    false => None,
+                }
+            })
+            .map(|entry| {
+                let specific_dataset_dir = entry.path();
+                let aeon_file = specific_dataset_dir.join("model.aeon");
+
+                println!("processing: {:?}", aeon_file);
+
+                graph_from_file(&aeon_file).unwrap()
+            })
+            // .take(100)
+            .inspect(|async_graph| {
+                println!(
+                    "the colors size: {:?}",
+                    // async_graph.unit_colors().approx_cardinality()
+                    async_graph.empty_colors()
+                )
+            })
+            .filter(|async_graph| async_graph.unit_colors().exact_cardinality() == BigInt::from(1));
+
+        println!(
+            " size of the usable datasets: {:?}",
+            usable_datasets.count()
+        );
+
+        // usable_datasets.for_each(|dataset| {
+        //     let chain_sccs = chain(&dataset).collect::<HashSet<_>>();
+        //     let fwdbwd_sccs = scc_decomposition(&dataset).collect::<HashSet<_>>();
+
+        //     assert_eq!(chain_sccs, fwdbwd_sccs);
+        // });
     }
 }
