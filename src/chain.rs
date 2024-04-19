@@ -56,7 +56,7 @@ fn chain_rec(
 
     assert!(!pivot.is_empty()); // trivially true; subgraph is nonempty (else returned above)
 
-    let mut fwd_reachable_acc = graph.mk_empty_colored_vertices();
+    let mut fwd_reachable_acc = pivot.clone();
     let mut current_layer = pivot.clone();
     loop {
         let next_layer = graph
