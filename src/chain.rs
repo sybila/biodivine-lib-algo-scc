@@ -303,7 +303,7 @@ mod test {
             })
             .map(|entry| {
                 let specific_dataset_dir = entry.path();
-                let aeon_file = specific_dataset_dir.join("model.aeon");
+                let aeon_file = specific_dataset_dir.join("model.sbml");
 
                 println!("processing: {:?}", aeon_file);
 
@@ -319,16 +319,20 @@ mod test {
             })
             .filter(|async_graph| async_graph.unit_colors().exact_cardinality() == BigInt::from(1));
 
-        println!(
-            " size of the usable datasets: {:?}",
-            usable_datasets.count()
-        );
+        let from_smallest_heuristically = {
+            let mut sortable = usable_datasets.collect::<Vec<_>>();
+            sortable
+                .sort_by_key(|async_graph| async_graph.as_network().unwrap().variables().count());
+            sortable
+        };
 
-        // usable_datasets.for_each(|dataset| {
-        //     let chain_sccs = chain(&dataset).collect::<HashSet<_>>();
-        //     let fwdbwd_sccs = scc_decomposition(&dataset).collect::<HashSet<_>>();
-
-        //     assert_eq!(chain_sccs, fwdbwd_sccs);
-        // });
+        from_smallest_heuristically
+            .into_iter()
+            .take(1) // todo test on all datasets
+            .for_each(|dataset| {
+                let chain_sccs = chain(&dataset).collect::<HashSet<_>>();
+                let fwdbwd_sccs = scc_decomposition(&dataset).collect::<HashSet<_>>();
+                assert_eq!(chain_sccs, fwdbwd_sccs);
+            });
     }
 }
