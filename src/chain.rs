@@ -31,41 +31,35 @@ impl ChainCalculator {
     /// * `vertices_hint` - the vertices that are already in the scc
     /// * `sccs_dump` - used to "output" the sccs
     fn chain_rec(
-        // todo how to generate the subgraphs efficiently?
-        _graph: &SymbolicAsyncGraph,
-        _induced_subgraph_veritces: &GraphColoredVertices,
-        _vertices_hint: &GraphColoredVertices,
-        _sccs_dump: &mut Vec<GraphColoredVertices>,
+        // todo possible to generate the subgraphs efficiently? better than repeatedly intersecting with the `induced_subgraph_veritces`?
+        graph: &SymbolicAsyncGraph,
+        induced_subgraph_veritces: &GraphColoredVertices,
+        vertices_hint: &GraphColoredVertices,
+        sccs_dump: &mut Vec<GraphColoredVertices>,
     ) {
-        if _induced_subgraph_veritces.is_empty() {
+        if induced_subgraph_veritces.is_empty() {
             return; // base case
         }
 
         assert!(
-            _graph.unit_colors().exact_cardinality() == BigInt::from(1), // todo probably use "safer" way than `exact_cardinality()` which may be slow
+            graph.unit_colors().exact_cardinality() == BigInt::from(1), // todo probably use "safer" way than `exact_cardinality()` which may be slow
             "precondition violated; maybe use the colored version instead?" // todo maybe move this into the first recursive call only
         );
 
-        let pivot = match _vertices_hint.is_empty() {
-            false => _vertices_hint,
-            true => _induced_subgraph_veritces,
+        let pivot = match vertices_hint.is_empty() {
+            false => vertices_hint,
+            true => induced_subgraph_veritces,
         }
         .pick_singleton();
 
         assert!(!pivot.is_empty()); // trivially true; subgraph is nonempty (else returned above)
 
-        let mut fwd_reachable_acc = _graph.mk_empty_colored_vertices();
+        let mut fwd_reachable_acc = graph.mk_empty_colored_vertices();
         let mut current_layer = pivot.clone();
         loop {
-            let next_layer = _graph
-                // todo better way of computing succs over all variables?
-                .variables()
-                .fold(_graph.mk_empty_colored_vertices(), |acc, var_id| {
-                    acc.union(&_graph.var_post(var_id, &current_layer))
-                })
-                // might want other way of inducing the subgraph, so that there are no such invalid edges
-                // for now, defensively intersect
-                .intersect(_induced_subgraph_veritces)
+            let next_layer = graph
+                .post(&current_layer)
+                .intersect(induced_subgraph_veritces) // stay in the subgraph
                 .minus(&fwd_reachable_acc); // take only the *proper* layer
 
             if next_layer.is_empty() {
@@ -81,41 +75,39 @@ impl ChainCalculator {
 
         let mut restricted_bwd_reachable_acc = pivot.clone();
         loop {
-            let resticted_previous_layer = _graph
-                .variables()
-                .clone()
-                .fold(_graph.mk_empty_colored_vertices(), |acc, var_id| {
-                    acc.union(&_graph.var_pre(var_id, &restricted_bwd_reachable_acc))
-                })
-                // restrict to just the vertices that are in the scc
+            // todo there may be more efficient way to do this wrt. bdd operation efficiency (`pre` on just the last layer?)
+            //  cannot use the already available `graph.reach_forward()`;
+            //  must intersect with `fwd_reachable` on each step;
+            //  unless efficient way of computing induced subgraph
+            let resticted_pre = graph // not really a proper *layer*; not cleaned (`.minus(...)`)
+                .pre(&restricted_bwd_reachable_acc)
                 .intersect(&fwd_reachable);
 
-            if resticted_previous_layer.is_subset(&restricted_bwd_reachable_acc) {
+            if resticted_pre.is_subset(&restricted_bwd_reachable_acc) {
                 break; // no further progress possible
             }
 
-            restricted_bwd_reachable_acc =
-                restricted_bwd_reachable_acc.union(&resticted_previous_layer);
+            restricted_bwd_reachable_acc = restricted_bwd_reachable_acc.union(&resticted_pre);
         }
 
         let the_scc = restricted_bwd_reachable_acc;
 
         // output the scc
-        _sccs_dump.push(the_scc.clone()); // todo reorder -> no clone (currently readability++)
+        sccs_dump.push(the_scc.clone()); // todo reorder -> no clone (currently readability++)
 
         let fwd_subgraph = fwd_reachable.minus(&the_scc);
         let fwd_hint = last_fwd_layer.minus(&the_scc);
-        Self::chain_rec(_graph, &fwd_subgraph, &fwd_hint, _sccs_dump);
+        Self::chain_rec(graph, &fwd_subgraph, &fwd_hint, sccs_dump);
 
-        let rest_subgraph = _induced_subgraph_veritces.minus(&fwd_reachable);
-        let scc_predecessors = _graph
+        let rest_subgraph = induced_subgraph_veritces.minus(&fwd_reachable);
+        let scc_predecessors = graph
             .variables()
-            .fold(_graph.mk_empty_colored_vertices(), |acc, var_id| {
-                acc.union(&_graph.var_pre(var_id, &the_scc))
+            .fold(graph.mk_empty_colored_vertices(), |acc, var_id| {
+                acc.union(&graph.var_pre(var_id, &the_scc))
             })
-            .intersect(_induced_subgraph_veritces); // todo intersection necessary?
+            .intersect(induced_subgraph_veritces); // todo intersection necessary?
         let rest_hint = scc_predecessors.minus(&fwd_reachable); // todo `.minus(&the_scc)` correct? more efficient?
-        Self::chain_rec(_graph, &rest_subgraph, &rest_hint, _sccs_dump);
+        Self::chain_rec(graph, &rest_subgraph, &rest_hint, sccs_dump);
     }
 }
 
