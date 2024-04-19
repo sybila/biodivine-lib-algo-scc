@@ -211,5 +211,10 @@ mod test {
         );
 
         assert_eq!(out_sccs.len(), 2);
+
+        // one of the components is { (a=false, b=false), (a=true, b=false) }
+        assert!(out_sccs.contains(&b_false));
+        // the other is { (a=false, b=true), (a=true, b=true) }
+        assert!(out_sccs.contains(&b_true));
     }
 }
