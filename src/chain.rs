@@ -114,13 +114,15 @@ fn chain_rec(
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashSet;
+
     use biodivine_lib_param_bn::{
         biodivine_std::traits::Set, symbolic_async_graph::SymbolicAsyncGraph, BooleanNetwork,
         FnUpdate, RegulatoryGraph,
     };
     use num_bigint::{BigInt, Sign};
 
-    use crate::chain::chain;
+    use crate::{_fwd_bwd::scc_decomposition, chain::chain};
 
     #[test]
     fn chain_rec_test() {
@@ -211,5 +213,40 @@ mod test {
         assert!(sccs.contains(&b_false));
         // the other is { (a=false, b=true), (a=true, b=true) }
         assert!(sccs.contains(&b_true));
+    }
+
+    fn basic_async_graph() -> SymbolicAsyncGraph {
+        let regulatory_graph = RegulatoryGraph::try_from(
+            r#"
+            A -| A
+            B -> B
+            "#,
+        )
+        .unwrap();
+
+        let var_a = regulatory_graph.find_variable("A").unwrap();
+        let var_b = regulatory_graph.find_variable("B").unwrap();
+
+        let mut bool_network = BooleanNetwork::new(regulatory_graph);
+
+        bool_network
+            .set_update_function(var_a, Some(FnUpdate::Not(Box::new(FnUpdate::Var(var_a)))))
+            .unwrap();
+
+        bool_network
+            .set_update_function(var_b, Some(FnUpdate::Var(var_b)))
+            .unwrap();
+
+        SymbolicAsyncGraph::new(&bool_network).unwrap()
+    }
+
+    #[test]
+    fn compare_chain_fwdbwd_basic_graph() {
+        let async_graph = basic_async_graph();
+
+        let chain_sccs = chain(&async_graph).collect::<HashSet<_>>();
+        let fwdbwd_sccs = scc_decomposition(&async_graph).collect::<HashSet<_>>();
+
+        assert_eq!(chain_sccs, fwdbwd_sccs);
     }
 }
