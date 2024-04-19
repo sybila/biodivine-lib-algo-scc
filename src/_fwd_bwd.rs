@@ -34,8 +34,47 @@ fn get_some_scc(
 
     let pivot = space_to_pick_from.pick_singleton();
 
-    let fwd = graph.reach_forward(&pivot);
-    let bwd = graph.reach_backward(&pivot);
+    // let fwd = graph.reach_forward(&pivot);
+    // let bwd = graph.reach_backward(&pivot);
+
+    let fwd = naive_fwd(graph, &pivot);
+    let bwd = naive_bwd(graph, &pivot);
 
     fwd.intersect(&bwd)
+}
+
+// SymbolicAsyncGraph::reach_forward optimized; use this naive approach for better comparison
+fn naive_fwd(graph: &SymbolicAsyncGraph, pivot: &GraphColoredVertices) -> GraphColoredVertices {
+    let mut result = pivot.clone();
+    let mut curr_layer = pivot.clone();
+
+    loop {
+        let next_layer = graph.post(&curr_layer).minus(&result);
+        if next_layer.is_empty() {
+            break;
+        }
+
+        result = result.union(&next_layer);
+        curr_layer = next_layer;
+    }
+
+    result
+}
+
+// SymbolicAsyncGraph::reach_backward optimized; use this naive approach for better comparison
+fn naive_bwd(graph: &SymbolicAsyncGraph, pivot: &GraphColoredVertices) -> GraphColoredVertices {
+    let mut result = pivot.clone();
+    let mut curr_layer = pivot.clone();
+
+    loop {
+        let next_layer = graph.pre(&curr_layer).minus(&result);
+        if next_layer.is_empty() {
+            break;
+        }
+
+        result = result.union(&next_layer);
+        curr_layer = next_layer;
+    }
+
+    result
 }

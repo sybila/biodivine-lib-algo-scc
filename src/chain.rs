@@ -328,10 +328,12 @@ mod test {
 
         from_smallest_heuristically
             .into_iter()
-            .take(1) // todo test on all datasets
+            .take(10) // todo test on all datasets
             .for_each(|dataset| {
-                let chain_sccs = chain(&dataset).collect::<HashSet<_>>();
+                println!("computing fwdbwd");
                 let fwdbwd_sccs = scc_decomposition(&dataset).collect::<HashSet<_>>();
+                println!("computing chain");
+                let chain_sccs = chain(&dataset).collect::<HashSet<_>>();
                 assert_eq!(chain_sccs, fwdbwd_sccs);
             });
     }
