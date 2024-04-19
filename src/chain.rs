@@ -37,6 +37,10 @@ impl ChainCalculator {
         _vertices_hint: &GraphColoredVertices,
         _sccs_dump: &mut Vec<GraphColoredVertices>,
     ) {
+        if _induced_subgraph_veritces.is_empty() {
+            return; // base case
+        }
+
         assert!(
             _graph.unit_colors().exact_cardinality() == BigInt::from(1), // todo probably use "safer" way than `exact_cardinality()` which may be slow
             "precondition violated; maybe use the colored version instead?" // todo maybe move this into the first recursive call only
@@ -61,7 +65,8 @@ impl ChainCalculator {
                 })
                 // might want other way of inducing the subgraph, so that there are no such invalid edges
                 // for now, defensively intersect
-                .intersect(_induced_subgraph_veritces);
+                .intersect(_induced_subgraph_veritces)
+                .minus(&fwd_reachable_acc); // take only the *proper* layer
 
             if next_layer.is_empty() {
                 break;
@@ -74,7 +79,7 @@ impl ChainCalculator {
         let fwd_reachable = fwd_reachable_acc;
         let last_fwd_layer = current_layer;
 
-        let mut restricted_bwd_reachable_acc = _graph.mk_empty_colored_vertices();
+        let mut restricted_bwd_reachable_acc = pivot.clone();
         loop {
             let resticted_previous_layer = _graph
                 .variables()
