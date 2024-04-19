@@ -2,6 +2,7 @@ use biodivine_lib_param_bn::{
     biodivine_std::traits::Set,
     symbolic_async_graph::{GraphColoredVertices, SymbolicAsyncGraph},
 };
+use num_bigint::BigInt;
 
 fn chain() {
     todo!();
@@ -37,7 +38,7 @@ impl ChainCalculator {
         _sccs_dump: &mut Vec<GraphColoredVertices>,
     ) {
         assert!(
-            _graph.unit_colors().symbolic_size() == 1,
+            _graph.unit_colors().exact_cardinality() == BigInt::from(1), // todo probably use "safer" way than `exact_cardinality()` which may be slow
             "precondition violated; maybe use the colored version instead?" // todo maybe move this into the first recursive call only
         );
 
@@ -110,5 +111,108 @@ impl ChainCalculator {
             .intersect(_induced_subgraph_veritces); // todo intersection necessary?
         let rest_hint = scc_predecessors.minus(&fwd_reachable); // todo `.minus(&the_scc)` correct? more efficient?
         Self::chain_rec(_graph, &rest_subgraph, &rest_hint, _sccs_dump);
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use biodivine_lib_param_bn::{
+        biodivine_std::traits::Set, symbolic_async_graph::SymbolicAsyncGraph, BooleanNetwork,
+        FnUpdate, RegulatoryGraph,
+    };
+    use num_bigint::{BigInt, Sign};
+
+    use crate::chain::ChainCalculator;
+
+    #[test]
+    fn chain_rec_test() {
+        let regulatory_graph = RegulatoryGraph::try_from(
+            r#"
+            A -| A
+            B -> B
+            "#,
+        )
+        .unwrap();
+
+        let var_a = regulatory_graph.find_variable("A").unwrap();
+        let var_b = regulatory_graph.find_variable("B").unwrap();
+
+        let mut bool_network = BooleanNetwork::new(regulatory_graph);
+
+        bool_network
+            .set_update_function(var_a, Some(FnUpdate::Not(Box::new(FnUpdate::Var(var_a)))))
+            .unwrap();
+
+        bool_network
+            .set_update_function(var_b, Some(FnUpdate::Var(var_b)))
+            .unwrap();
+
+        let async_graph = SymbolicAsyncGraph::new(&bool_network).unwrap();
+
+        let unit_set = async_graph.unit_colored_vertices();
+
+        let a_true = unit_set.fix_network_variable(var_a, true);
+        let b_true = unit_set.fix_network_variable(var_b, true);
+        let a_false = unit_set.fix_network_variable(var_a, false);
+        let b_false = unit_set.fix_network_variable(var_b, false);
+
+        assert!(a_true.exact_cardinality() == BigInt::new(Sign::Plus, vec![2]));
+        assert!(b_true.exact_cardinality() == BigInt::new(Sign::Plus, vec![2]));
+        assert!(a_false.exact_cardinality() == BigInt::new(Sign::Plus, vec![2]));
+        assert!(b_false.exact_cardinality() == BigInt::new(Sign::Plus, vec![2]));
+
+        let false_false = a_false.intersect(&b_false);
+        let false_true = a_false.intersect(&b_true);
+        let true_false = a_true.intersect(&b_false);
+        let true_true = a_true.intersect(&b_true);
+
+        false_false.as_bdd().cardinality();
+
+        assert_eq!(
+            false_false.exact_cardinality(),
+            BigInt::new(Sign::Plus, vec![1])
+        );
+        assert_eq!(
+            false_true.exact_cardinality(),
+            BigInt::new(Sign::Plus, vec![1])
+        );
+        assert_eq!(
+            true_false.exact_cardinality(),
+            BigInt::new(Sign::Plus, vec![1])
+        );
+        assert_eq!(
+            true_true.exact_cardinality(),
+            BigInt::new(Sign::Plus, vec![1])
+        );
+
+        let false_false_post = async_graph.post(&false_false);
+        assert_eq!(
+            false_false_post.exact_cardinality(),
+            BigInt::new(Sign::Plus, vec![1])
+        );
+        assert_eq!(false_false_post, true_false);
+
+        let a_false_post = async_graph.post(&a_false);
+        assert_eq!(
+            a_false_post.exact_cardinality(),
+            BigInt::new(Sign::Plus, vec![2])
+        );
+        assert_eq!(a_false_post, a_true);
+
+        // the chain part
+        println!(
+            "the colors: {:?}",
+            async_graph.unit_colors().exact_cardinality()
+        );
+
+        let mut out_sccs = Vec::new();
+        ChainCalculator::chain_rec(
+            &async_graph,
+            async_graph.unit_colored_vertices(),
+            async_graph.empty_colored_vertices(),
+            &mut out_sccs,
+        );
+
+        assert_eq!(out_sccs.len(), 2);
     }
 }
