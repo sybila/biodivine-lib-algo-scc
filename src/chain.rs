@@ -272,8 +272,7 @@ mod test {
 
         // assert_eq!(chain_sccs, fwdbwd_sccs);
 
-        let dir_path =
-            PathBuf::from("/home/chudicek/Documents/fi/fi_08/sybila/colorful/cejn/datasets");
+        let dir_path = PathBuf::from("./datasets");
 
         let entries = std::fs::read_dir(dir_path).unwrap();
         // for entry in entries {
