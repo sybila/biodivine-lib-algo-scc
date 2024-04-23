@@ -84,7 +84,7 @@ fn chain_rec(
         chain_rec(&fwd_subgraph, &fwd_hint, scc_dump);
     }
 
-    let rest_remaining = &graph.unit_colored_vertices().minus(&fwd_reachable);
+    let rest_remaining = graph.unit_colored_vertices().minus(&fwd_reachable);
     if !rest_remaining.is_empty() {
         let rest_subgraph = graph.restrict(&rest_remaining);
         let rest_hint = graph.pre(&the_scc).intersect(&rest_remaining);
