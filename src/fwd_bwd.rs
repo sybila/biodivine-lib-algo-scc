@@ -1,29 +1,25 @@
 //! used just for integration tests - to compare the output of chain on large (non-manual) datasets
 
-#![allow(dead_code)]
-
+use crate::precondition_graph_not_colored;
 use biodivine_lib_param_bn::{
     biodivine_std::traits::Set,
     symbolic_async_graph::{GraphColoredVertices, SymbolicAsyncGraph},
 };
-use num_bigint::BigInt;
 
-pub fn scc_decomposition(graph: &SymbolicAsyncGraph) -> impl Iterator<Item = GraphColoredVertices> {
-    assert_eq!(
-        graph.unit_colors().exact_cardinality(),
-        BigInt::from(1), // todo probably use "safer" way than `exact_cardinality()` which may be slow
-        "precondition violated; maybe use the colored version instead?" // todo maybe move this into the first recursive call only
-    );
+pub fn fwd_bwd_scc_decomposition(
+    graph: &SymbolicAsyncGraph,
+) -> impl Iterator<Item = GraphColoredVertices> {
+    precondition_graph_not_colored(graph);
 
-    let mut sccs_dump = Vec::new();
-    let mut remaining_space = graph.unit_colored_vertices().clone();
+    let mut scc_dump = Vec::new();
+    let mut remaining_space = graph.mk_unit_colored_vertices();
     while !remaining_space.is_empty() {
         let scc = get_some_scc(graph, &remaining_space);
-        sccs_dump.push(scc.clone());
         remaining_space = remaining_space.minus(&scc);
+        scc_dump.push(scc);
     }
 
-    sccs_dump.into_iter()
+    scc_dump.into_iter()
 }
 
 fn get_some_scc(

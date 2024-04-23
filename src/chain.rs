@@ -2,24 +2,18 @@ use biodivine_lib_param_bn::{
     biodivine_std::traits::Set,
     symbolic_async_graph::{GraphColoredVertices, SymbolicAsyncGraph},
 };
-use num_bigint::BigInt;
 
-/// does the decomposition of the graph to sccs
-/// should be made iterative somethime in the future
+use crate::precondition_graph_not_colored;
+
+/// does the decomposition of the graph to SCCs
+/// should be made iterative sometime in the future
 /// should also be remade not to return `Vec`
 /// also the "metadata" about the graph would be needlessly duplicated this way
 /// also colored version wanted (as another method)
 pub fn chain(graph: &SymbolicAsyncGraph) -> impl Iterator<Item = GraphColoredVertices> {
-    // todo possible to do better than `Vec`?? anyway, iterator does give us the flexibility to change later
-    let mut sccs_dump = Vec::new();
-    chain_rec(
-        graph,
-        graph.unit_colored_vertices(),
-        graph.empty_colored_vertices(),
-        &mut sccs_dump,
-    );
-
-    sccs_dump.into_iter()
+    let mut scc_dump = Vec::new();
+    chain_rec(graph, graph.empty_colored_vertices(), &mut scc_dump);
+    scc_dump.into_iter()
 }
 
 /// recursive version of the chain decomposition
@@ -31,38 +25,28 @@ pub fn chain(graph: &SymbolicAsyncGraph) -> impl Iterator<Item = GraphColoredVer
 ///
 /// * `graph` - the graph to be decomposed
 /// * `vertices_hint` - the vertices that are already in the scc
-/// * `sccs_dump` - used to "output" the sccs
+/// * `scc_dump` - used to "output" the SCCs
 fn chain_rec(
-    // todo possible to generate the subgraphs efficiently? better than repeatedly intersecting with the `induced_subgraph_veritces`?
     graph: &SymbolicAsyncGraph,
-    induced_subgraph_veritces: &GraphColoredVertices,
     vertices_hint: &GraphColoredVertices,
-    sccs_dump: &mut Vec<GraphColoredVertices>,
+    scc_dump: &mut Vec<GraphColoredVertices>,
 ) {
-    if induced_subgraph_veritces.is_empty() {
-        return; // base case
-    }
+    assert!(!graph.unit_vertices().is_empty());
+    precondition_graph_not_colored(graph);
 
-    assert!(
-        graph.unit_colors().exact_cardinality() == BigInt::from(1), // todo probably use "safer" way than `exact_cardinality()` which may be slow
-        "precondition violated; maybe use the colored version instead?" // todo maybe move this into the first recursive call only
-    );
-
-    let pivot = match vertices_hint.is_empty() {
-        false => vertices_hint,
-        true => induced_subgraph_veritces,
-    }
-    .pick_singleton();
+    let pivot_set = if vertices_hint.is_empty() {
+        graph.unit_colored_vertices()
+    } else {
+        vertices_hint
+    };
+    let pivot = pivot_set.pick_singleton();
 
     assert!(!pivot.is_empty()); // trivially true; subgraph is nonempty (else returned above)
 
     let mut fwd_reachable_acc = pivot.clone();
     let mut current_layer = pivot.clone();
     loop {
-        let next_layer = graph
-            .post(&current_layer)
-            .intersect(induced_subgraph_veritces) // stay in the subgraph
-            .minus(&fwd_reachable_acc); // take only the *proper* layer
+        let next_layer = graph.post(&current_layer).minus(&fwd_reachable_acc); // take only the *proper* layer
 
         if next_layer.is_empty() {
             break;
@@ -76,78 +60,57 @@ fn chain_rec(
     let last_fwd_layer = current_layer;
 
     let mut restricted_bwd_reachable_acc = pivot.clone();
+    let graph_fwd_restricted = graph.restrict(&fwd_reachable);
     loop {
-        // todo there may be more efficient way to do this wrt. bdd operation efficiency (`pre` on just the last layer?)
-        //  cannot use the already available `graph.reach_forward()`;
-        //  must intersect with `fwd_reachable` on each step;
-        //  unless efficient way of computing induced subgraph
-        let resticted_pre = graph // not really a proper *layer*; not cleaned (`.minus(...)`)
-            .pre(&restricted_bwd_reachable_acc)
-            .intersect(&fwd_reachable);
+        let restricted_pre = graph_fwd_restricted // not really a proper *layer*; not cleaned (`.minus(...)`)
+            .pre(&restricted_bwd_reachable_acc);
 
-        if resticted_pre.is_subset(&restricted_bwd_reachable_acc) {
+        if restricted_pre.is_subset(&restricted_bwd_reachable_acc) {
             break; // no further progress possible
         }
 
-        restricted_bwd_reachable_acc = restricted_bwd_reachable_acc.union(&resticted_pre);
+        restricted_bwd_reachable_acc = restricted_bwd_reachable_acc.union(&restricted_pre);
     }
 
     let the_scc = restricted_bwd_reachable_acc;
 
-    // output the scc
-    sccs_dump.push(the_scc.clone()); // todo reorder -> no clone (currently readability++)
+    // Output the scc.
+    scc_dump.push(the_scc.clone());
 
-    let fwd_subgraph = fwd_reachable.minus(&the_scc);
-    let fwd_hint = last_fwd_layer.minus(&the_scc);
-    chain_rec(graph, &fwd_subgraph, &fwd_hint, sccs_dump);
+    let fwd_remaining = fwd_reachable.minus(&the_scc);
+    if !fwd_remaining.is_empty() {
+        let fwd_subgraph = graph.restrict(&fwd_remaining);
+        let fwd_hint = last_fwd_layer.minus(&the_scc);
+        chain_rec(&fwd_subgraph, &fwd_hint, scc_dump);
+    }
 
-    let rest_subgraph = induced_subgraph_veritces.minus(&fwd_reachable);
-    let scc_predecessors = graph
-        .variables()
-        .fold(graph.mk_empty_colored_vertices(), |acc, var_id| {
-            acc.union(&graph.var_pre(var_id, &the_scc))
-        })
-        .intersect(induced_subgraph_veritces); // todo intersection necessary?
-    let rest_hint = scc_predecessors.minus(&fwd_reachable); // todo `.minus(&the_scc)` correct? more efficient?
-    chain_rec(graph, &rest_subgraph, &rest_hint, sccs_dump);
+    let rest_remaining = &graph.unit_colored_vertices().minus(&fwd_reachable);
+    if !rest_remaining.is_empty() {
+        let rest_subgraph = graph.restrict(&rest_remaining);
+        let rest_hint = graph.pre(&the_scc).intersect(&rest_remaining);
+        chain_rec(&rest_subgraph, &rest_hint, scc_dump);
+    }
 }
 
 #[cfg(test)]
 mod test {
-    use std::{collections::HashSet, path::PathBuf};
+    use std::collections::HashSet;
 
     use biodivine_lib_param_bn::{
         biodivine_std::traits::Set, symbolic_async_graph::SymbolicAsyncGraph, BooleanNetwork,
-        FnUpdate, RegulatoryGraph,
     };
-    use num_bigint::{BigInt, Sign};
+    use num_bigint::BigInt;
+    use test_generator::test_resources;
 
-    use crate::{_fwd_bwd::scc_decomposition, chain::chain};
+    use crate::{chain::chain, fwd_bwd::fwd_bwd_scc_decomposition};
 
     #[test]
     fn chain_rec_test() {
-        let regulatory_graph = RegulatoryGraph::try_from(
-            r#"
-            A -| A
-            B -> B
-            "#,
-        )
-        .unwrap();
-
-        let var_a = regulatory_graph.find_variable("A").unwrap();
-        let var_b = regulatory_graph.find_variable("B").unwrap();
-
-        let mut bool_network = BooleanNetwork::new(regulatory_graph);
-
-        bool_network
-            .set_update_function(var_a, Some(FnUpdate::Not(Box::new(FnUpdate::Var(var_a)))))
-            .unwrap();
-
-        bool_network
-            .set_update_function(var_b, Some(FnUpdate::Var(var_b)))
-            .unwrap();
-
-        let async_graph = SymbolicAsyncGraph::new(&bool_network).unwrap();
+        let async_graph = basic_async_graph();
+        let mut vars = async_graph.variables();
+        let var_a = vars.next().unwrap();
+        let var_b = vars.next().unwrap();
+        assert!(vars.next().is_none());
 
         let unit_set = async_graph.unit_colored_vertices();
 
@@ -156,47 +119,27 @@ mod test {
         let a_false = unit_set.fix_network_variable(var_a, false);
         let b_false = unit_set.fix_network_variable(var_b, false);
 
-        assert!(a_true.exact_cardinality() == BigInt::new(Sign::Plus, vec![2]));
-        assert!(b_true.exact_cardinality() == BigInt::new(Sign::Plus, vec![2]));
-        assert!(a_false.exact_cardinality() == BigInt::new(Sign::Plus, vec![2]));
-        assert!(b_false.exact_cardinality() == BigInt::new(Sign::Plus, vec![2]));
+        assert_eq!(a_true.exact_cardinality(), BigInt::from(2));
+        assert_eq!(b_true.exact_cardinality(), BigInt::from(2));
+        assert_eq!(a_false.exact_cardinality(), BigInt::from(2));
+        assert_eq!(b_false.exact_cardinality(), BigInt::from(2));
 
         let false_false = a_false.intersect(&b_false);
         let false_true = a_false.intersect(&b_true);
         let true_false = a_true.intersect(&b_false);
         let true_true = a_true.intersect(&b_true);
 
-        false_false.as_bdd().cardinality();
-
-        assert_eq!(
-            false_false.exact_cardinality(),
-            BigInt::new(Sign::Plus, vec![1])
-        );
-        assert_eq!(
-            false_true.exact_cardinality(),
-            BigInt::new(Sign::Plus, vec![1])
-        );
-        assert_eq!(
-            true_false.exact_cardinality(),
-            BigInt::new(Sign::Plus, vec![1])
-        );
-        assert_eq!(
-            true_true.exact_cardinality(),
-            BigInt::new(Sign::Plus, vec![1])
-        );
+        assert_eq!(false_false.exact_cardinality(), BigInt::from(1));
+        assert_eq!(false_true.exact_cardinality(), BigInt::from(1));
+        assert_eq!(true_false.exact_cardinality(), BigInt::from(1));
+        assert_eq!(true_true.exact_cardinality(), BigInt::from(1));
 
         let false_false_post = async_graph.post(&false_false);
-        assert_eq!(
-            false_false_post.exact_cardinality(),
-            BigInt::new(Sign::Plus, vec![1])
-        );
+        assert_eq!(false_false_post.exact_cardinality(), BigInt::from(1));
         assert_eq!(false_false_post, true_false);
 
         let a_false_post = async_graph.post(&a_false);
-        assert_eq!(
-            a_false_post.exact_cardinality(),
-            BigInt::new(Sign::Plus, vec![2])
-        );
+        assert_eq!(a_false_post.exact_cardinality(), BigInt::from(2));
         assert_eq!(a_false_post, a_true);
 
         // the chain part
@@ -205,135 +148,81 @@ mod test {
             async_graph.unit_colors().exact_cardinality()
         );
 
-        let sccs = chain(&async_graph).collect::<Vec<_>>();
+        let scc_vec = chain(&async_graph).collect::<Vec<_>>();
 
-        assert_eq!(sccs.len(), 2);
+        assert_eq!(scc_vec.len(), 2);
 
         // one of the components is { (a=false, b=false), (a=true, b=false) }
-        assert!(sccs.contains(&b_false));
+        assert!(scc_vec.contains(&b_false));
         // the other is { (a=false, b=true), (a=true, b=true) }
-        assert!(sccs.contains(&b_true));
+        assert!(scc_vec.contains(&b_true));
     }
 
     fn basic_async_graph() -> SymbolicAsyncGraph {
-        let regulatory_graph = RegulatoryGraph::try_from(
+        let bool_network = BooleanNetwork::try_from(
             r#"
             A -| A
             B -> B
+            $A: !A
+            $B: B
             "#,
         )
         .unwrap();
-
-        let var_a = regulatory_graph.find_variable("A").unwrap();
-        let var_b = regulatory_graph.find_variable("B").unwrap();
-
-        let mut bool_network = BooleanNetwork::new(regulatory_graph);
-
-        bool_network
-            .set_update_function(var_a, Some(FnUpdate::Not(Box::new(FnUpdate::Var(var_a)))))
-            .unwrap();
-
-        bool_network
-            .set_update_function(var_b, Some(FnUpdate::Var(var_b)))
-            .unwrap();
-
         SymbolicAsyncGraph::new(&bool_network).unwrap()
     }
 
-    fn graph_from_file(filepath: &PathBuf) -> Result<SymbolicAsyncGraph, String> {
-        let bn = BooleanNetwork::try_from_file(filepath)?;
-        let graph = SymbolicAsyncGraph::new(&bn)?;
-        Ok(graph)
-    }
-
     #[test]
-    fn compare_chain_fwdbwd_basic_graph() {
+    fn compare_chain_fwd_bwd_basic_graph() {
         let async_graph = basic_async_graph();
 
-        let chain_sccs = chain(&async_graph).collect::<HashSet<_>>();
-        let fwdbwd_sccs = scc_decomposition(&async_graph).collect::<HashSet<_>>();
+        let chain_scc_set = chain(&async_graph).collect::<HashSet<_>>();
+        let fwd_bwd_scc_set = fwd_bwd_scc_decomposition(&async_graph).collect::<HashSet<_>>();
 
-        assert_eq!(chain_sccs, fwdbwd_sccs);
+        assert_eq!(chain_scc_set, fwd_bwd_scc_set);
     }
 
-    #[test]
-    fn compare_chain_fwdbwd_some_dataset() {
-        // let dataset_path = PathBuf::from("/home/chudicek/Documents/fi/fi_08/sybila/colorful/cejn/datasets/[id-001]__[var-302]__[in-19]__[SIGNALING-IN-MACROPHAGE-ACTIVATION]/model.aeon");
-        // let async_graph = graph_from_file(&dataset_path).unwrap();
-        // assert!(!async_graph.unit_vertices().is_empty());
+    #[test_resources("./models/bbm-inputs-true/*.aeon")]
+    fn compare_chain_fwd_bwd_selected(model_path: &str) {
+        let bn = BooleanNetwork::try_from_file(model_path).unwrap();
 
-        // println!(
-        //     "the colors size: {:?}",
-        //     async_graph.unit_colors().exact_cardinality()
-        // );
-
-        // let chain_sccs = chain(&async_graph).collect::<HashSet<_>>();
-        // let fwdbwd_sccs = scc_decomposition(&async_graph).collect::<HashSet<_>>();
-
-        // assert_eq!(chain_sccs, fwdbwd_sccs);
-
-        let dir_path = PathBuf::from("./datasets");
-
-        let entries = std::fs::read_dir(dir_path).unwrap();
-        // for entry in entries {
-        //     let entry = entry.unwrap();
-        //     let specific_dataset_dir = entry.path();
-        //     let aeon_file = specific_dataset_dir.join("model.aeon");
-
-        //     let async_graph = graph_from_file(&aeon_file).unwrap();
-
-        //     println!(
-        //         "the colors size: {:?}",
-        //         async_graph.unit_colors().exact_cardinality()
-        //     );
-        // }
-
-        let usable_datasets = entries
-            .filter_map(|entry| {
-                let entry = match entry {
-                    Ok(entry) => entry,
-                    Err(_) => return None,
-                };
-
-                match entry.file_type().unwrap().is_dir() {
-                    true => Some(entry),
-                    false => None,
-                }
-            })
-            .map(|entry| {
-                let specific_dataset_dir = entry.path();
-                let aeon_file = specific_dataset_dir.join("model.sbml");
-
-                println!("processing: {:?}", aeon_file);
-
-                graph_from_file(&aeon_file).unwrap()
-            })
-            // .take(100)
-            .inspect(|async_graph| {
-                println!(
-                    "the colors size: {:?}",
-                    // async_graph.unit_colors().approx_cardinality()
-                    async_graph.empty_colors()
-                )
-            })
-            .filter(|async_graph| async_graph.unit_colors().exact_cardinality() == BigInt::from(1));
-
-        let from_smallest_heuristically = {
-            let mut sortable = usable_datasets.collect::<Vec<_>>();
-            sortable
-                .sort_by_key(|async_graph| async_graph.as_network().unwrap().variables().count());
-            sortable
+        let skip_threshold = if cfg!(feature = "expensive-tests") {
+            15
+        } else {
+            10
         };
 
-        from_smallest_heuristically
-            .into_iter()
-            .take(10) // todo test on all datasets
-            .for_each(|dataset| {
-                println!("computing fwdbwd");
-                let fwdbwd_sccs = scc_decomposition(&dataset).collect::<HashSet<_>>();
-                println!("computing chain");
-                let chain_sccs = chain(&dataset).collect::<HashSet<_>>();
-                assert_eq!(chain_sccs, fwdbwd_sccs);
-            });
+        if bn.num_vars() > skip_threshold {
+            // The network is too large.
+            println!(
+                " >> [{} > {}] Skipping {}.",
+                bn.num_vars(),
+                skip_threshold,
+                model_path
+            );
+            return;
+        }
+
+        // Network has no parameters (no colors).
+        assert_eq!(bn.num_parameters(), 0);
+        assert_eq!(bn.num_implicit_parameters(), 0);
+
+        let graph = SymbolicAsyncGraph::new(&bn).unwrap();
+
+        println!(
+            " >> [{} <= {}] Testing {}.",
+            bn.num_vars(),
+            skip_threshold,
+            model_path
+        );
+
+        println!(" >> Computing FWD-BWD.");
+        let fwd_bwd_scc_set = fwd_bwd_scc_decomposition(&graph).collect::<HashSet<_>>();
+
+        println!(" >> Computing chain.");
+        let chain_scc_set = chain(&graph).collect::<HashSet<_>>();
+
+        println!(" >> Found {} SCCs.", fwd_bwd_scc_set.len());
+
+        assert_eq!(chain_scc_set, fwd_bwd_scc_set);
     }
 }
