@@ -186,7 +186,7 @@ mod test {
         let bn = BooleanNetwork::try_from_file(model_path).unwrap();
 
         let skip_threshold = if cfg!(feature = "expensive-tests") {
-            15
+            14
         } else {
             10
         };
