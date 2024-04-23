@@ -17,7 +17,7 @@ fn main() {
 
     println!("all_scc, trivial_scc, sizes...");
     print!("{}, {}", scc_list.len(), trivial);
-    for scc in scc_list.iter() {
+    for scc in scc_list.iter().rev().take(100) {
         if !scc.is_singleton() {
             print!(", {}", scc.exact_cardinality());
         }
