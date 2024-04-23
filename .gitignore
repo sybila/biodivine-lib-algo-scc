@@ -21,3 +21,9 @@ Cargo.lock
 .idea
 
 /data/faulty
+
+# Benchmark results.
+_run_*
+
+# macOS trash
+.DS_Store
