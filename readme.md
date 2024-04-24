@@ -35,7 +35,7 @@ a model path as input, and outputs the number of discovered SCCs, followed by th
 the non-trivial SCCs. You are expected to use `time` to measure the runtime of the executable:
 
 ```
-time cargo run --release --examples chain -- ./path/to/model.aeon
+time cargo run --release --example chain -- ./path/to/model.aeon
 ```
 
 To run the benchmark for a collection of models, you can use the `bench.py` script.
