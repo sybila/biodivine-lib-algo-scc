@@ -94,11 +94,11 @@ jobs:
       - name: Run tarpaulin to compute coverage.
         run: RUST_MIN_STACK=120000; cargo tarpaulin --verbose --release --lib --out Xml
       - name: Upload to codecov.io
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
       - name: Archive code coverage results
-        uses: actions/upload-artifact@v1
+        uses: actions/upload-artifact@v4
         with:
           name: code-coverage-report
           path: cobertura.xml
