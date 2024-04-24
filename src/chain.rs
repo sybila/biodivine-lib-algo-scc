@@ -11,14 +11,12 @@ use crate::precondition_graph_not_colored;
 /// also the "metadata" about the graph would be needlessly duplicated this way
 /// also colored version wanted (as another method)
 pub fn chain(graph: &SymbolicAsyncGraph) -> impl Iterator<Item = GraphColoredVertices> {
-    if graph.unit_vertices().is_empty() {
-        return std::iter::empty();
-    }
-
     precondition_graph_not_colored(graph);
 
     let mut scc_dump = Vec::new();
-    chain_rec(graph, graph.empty_colored_vertices(), &mut scc_dump);
+    if !graph.unit_vertices().is_empty() {
+        chain_rec(graph, graph.empty_colored_vertices(), &mut scc_dump);
+    }
     scc_dump.into_iter()
 }
 
