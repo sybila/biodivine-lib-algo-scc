@@ -1,9 +1,15 @@
-mod _fwd_bwd;
-#[allow(dead_code)]
-mod chain;
+use biodivine_lib_param_bn::symbolic_async_graph::SymbolicAsyncGraph;
 
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
+pub mod chain;
+pub mod fwd_bwd;
+
+/// Assert that the given graph has no colors.
+fn precondition_graph_not_colored(graph: &SymbolicAsyncGraph) {
+    assert_eq!(
+        graph.symbolic_context().num_parameter_variables(),
+        0,
+        "precondition violated; maybe use the colored version instead?"
+    )
 }
 
 #[cfg(test)]
@@ -12,14 +18,6 @@ mod tests {
         biodivine_std::traits::Set, symbolic_async_graph::SymbolicAsyncGraph, BooleanNetwork,
         Monotonicity, Regulation, RegulatoryGraph,
     };
-
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
 
     #[test]
     fn lib_param_bn_tryout() -> Result<(), String> {

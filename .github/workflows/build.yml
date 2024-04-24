@@ -24,9 +24,11 @@ jobs:
       RUSTFLAGS: "-D warnings"
     steps:
       - name: Checkout.
-        uses: actions/checkout@v3
-      - name: Install Rust toolchain.
-        run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain ${{ env.RUST_VERSION }}
+        uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: rustfmt
       - name: Rust format check.
         run: cargo fmt --all -- --check
 
@@ -38,9 +40,10 @@ jobs:
     env:
       RUSTFLAGS: "-D warnings"
     steps:
-      - uses: actions/checkout@v3   
-      - name: Install Rust toolchain.
-        run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain ${{ env.RUST_VERSION }}
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
       - name: Rust code validity check.
         run: cargo check
 
@@ -52,11 +55,12 @@ jobs:
     env:
       RUSTFLAGS: "-D warnings"
     steps:
-      - uses: actions/checkout@v3      
-      - name: Install Rust toolchain.
-        run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain ${{ env.RUST_VERSION }}
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
       - name: Run tests.
-        run: cargo test --all-features --release
+        run: RUST_MIN_STACK=60000; cargo test --all-features --release -- --nocapture --test-threads=1
 
   # Check code style
   clippy:
@@ -66,9 +70,11 @@ jobs:
     env:
       RUSTFLAGS: "-D warnings"
     steps:
-      - uses: actions/checkout@v3   
-      - name: Install Rust toolchain.
-        run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain ${{ env.RUST_VERSION }}
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: clippy
       - name: Run clippy.
         run: cargo clippy --all-features
 
@@ -79,19 +85,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout.
-        uses: actions/checkout@v3
-      - name: Install Rust toolchain.
-        run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain ${{ env.RUST_VERSION }}
+        uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
       - name: Setup cargo-tarpaulin.
         run: cargo install cargo-tarpaulin
       - name: Run tarpaulin to compute coverage.
-        run: cargo tarpaulin --verbose --lib --examples --all-features --out Xml
+        run: RUST_MIN_STACK=120000; cargo tarpaulin --verbose --release --lib --out Xml
       - name: Upload to codecov.io
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
       - name: Archive code coverage results
-        uses: actions/upload-artifact@v1
+        uses: actions/upload-artifact@v4
         with:
           name: code-coverage-report
           path: cobertura.xml
