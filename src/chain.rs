@@ -39,10 +39,9 @@ fn chain_rec(
 ) {
     assert!(!graph.unit_vertices().is_empty());
 
-    let pivot_set = if vertices_hint.is_empty() {
-        graph.unit_colored_vertices()
-    } else {
-        vertices_hint
+    let pivot_set = match vertices_hint.is_empty() {
+        true => graph.unit_colored_vertices(),
+        false => vertices_hint,
     };
     let pivot = pivot_set.pick_singleton();
 
