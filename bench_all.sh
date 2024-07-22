@@ -17,5 +17,5 @@ ulimit -v 8388608
 # timeout means very long runtime if a lot of models fail, so we probably don't want to increase
 # this too much until the algorithm performs reasonably well.
 
-python3 ./bench.py 1m ./models/bbm-inputs-true ./target/release/examples/fwd_bwd
-python3 ./bench.py 1m ./models/bbm-inputs-true ./target/release/examples/chain
+python3 ./bench.py 1ms ./models/bbm-inputs-true ./target/release/fwd_bwd
+python3 ./bench.py 1ms ./models/bbm-inputs-true ./target/release/chain
