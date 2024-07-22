@@ -1,16 +1,26 @@
-use biodivine_lib_param_bn::{symbolic_async_graph::SymbolicAsyncGraph, BooleanNetwork};
-use cejn::chain::chain;
+use biodivine_lib_param_bn::symbolic_async_graph::SymbolicAsyncGraph;
+use biodivine_lib_param_bn::BooleanNetwork;
 
 fn main() {
-    let bn_path = std::env::args()
-        .nth(1)
-        .expect("args[1] should be the file path to the bn");
+    let args = std::env::args().collect::<Vec<_>>();
+    assert_eq!(args.len(), 2);
 
-    let bn = BooleanNetwork::try_from_file(bn_path).unwrap();
-    assert_eq!(bn.num_parameters(), 0);
-    assert_eq!(bn.num_implicit_parameters(), 0);
-
+    let bn = BooleanNetwork::try_from_file(&args[1]).unwrap();
     let graph = SymbolicAsyncGraph::new(&bn).unwrap();
 
-    let _unused = chain(&graph); // just care about creating them
+    println!("Loaded BN with {} variables.", bn.num_vars());
+
+    let mut scc_list = cejn::chain::chain(&graph).collect::<Vec<_>>();
+    scc_list.sort_by_key(|it| it.exact_cardinality());
+
+    let trivial = scc_list.iter().filter(|it| it.is_singleton()).count();
+
+    println!("all_scc, trivial_scc, sizes...");
+    print!("{}, {}", scc_list.len(), trivial);
+    for scc in scc_list.iter().rev().take(100) {
+        if !scc.is_singleton() {
+            print!(", {}", scc.exact_cardinality());
+        }
+    }
+    println!();
 }
