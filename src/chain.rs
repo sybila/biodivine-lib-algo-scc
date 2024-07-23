@@ -94,6 +94,106 @@ fn chain_rec(
     }
 }
 
+pub fn chain_saturation(graph: &SymbolicAsyncGraph) -> impl Iterator<Item = GraphColoredVertices> {
+    precondition_graph_not_colored(graph);
+
+    let mut scc_dump = Vec::new();
+    if !graph.unit_vertices().is_empty() {
+        chain_rec_saturation(graph, graph.empty_colored_vertices(), &mut scc_dump);
+    }
+    scc_dump.into_iter()
+}
+
+fn fwd_saturation(
+    graph: &SymbolicAsyncGraph,
+    initial: &GraphColoredVertices,
+) -> GraphColoredVertices {
+    let mut result_accumulator = initial.clone();
+
+    // todo likely better perf, right?
+    let rev_variables = graph.variables().rev().collect::<Vec<_>>();
+
+    'from_bottom_var: loop {
+        for var in rev_variables.iter() {
+            let step = graph.var_post_out(*var, &result_accumulator);
+
+            if !step.is_empty() {
+                result_accumulator = result_accumulator.union(&step);
+
+                continue 'from_bottom_var;
+            }
+        }
+
+        break result_accumulator;
+    }
+}
+
+fn bwd_saturation(
+    graph: &SymbolicAsyncGraph,
+    initial: &GraphColoredVertices,
+) -> GraphColoredVertices {
+    let mut result_accumulator = initial.clone();
+
+    // todo likely better perf, right?
+    let rev_variables = graph.variables().rev().collect::<Vec<_>>();
+
+    'from_bottom_var: loop {
+        for var in rev_variables.iter() {
+            let step = graph.var_pre_out(*var, &result_accumulator);
+
+            if !step.is_empty() {
+                result_accumulator = result_accumulator.union(&step);
+
+                continue 'from_bottom_var;
+            }
+        }
+
+        break result_accumulator;
+    }
+}
+
+fn chain_rec_saturation(
+    graph: &SymbolicAsyncGraph,
+    vertices_hint: &GraphColoredVertices,
+    scc_dump: &mut Vec<GraphColoredVertices>,
+) {
+    assert!(!graph.unit_vertices().is_empty());
+
+    let pivot_set = match vertices_hint.is_empty() {
+        true => graph.unit_colored_vertices(),
+        false => vertices_hint,
+    };
+    let pivot = pivot_set.pick_singleton();
+
+    assert!(!pivot.is_empty()); // trivially true; subgraph is nonempty (else returned above)
+
+    let fwd_reachable = fwd_saturation(graph, &pivot);
+
+    let scc = bwd_saturation(&graph.restrict(&fwd_reachable), &pivot);
+
+    // Output the scc.
+    scc_dump.push(scc.clone());
+
+    let fwd_remaining = fwd_reachable.minus(&scc);
+    if !fwd_remaining.is_empty() {
+        let fwd_subgraph = graph.restrict(&fwd_remaining);
+
+        // todo use better heuristic (hamming dist?); want to get close to the "bottom"
+        // todo beware of correctness; must pick the hint from somewhere else than the scc
+        // let fwd_hint = last_fwd_layer.minus(&the_scc);
+        let fwd_hint = fwd_remaining;
+
+        chain_rec_saturation(&fwd_subgraph, &fwd_hint, scc_dump);
+    }
+
+    let rest_remaining = graph.unit_colored_vertices().minus(&fwd_reachable);
+    if !rest_remaining.is_empty() {
+        let rest_subgraph = graph.restrict(&rest_remaining);
+        let rest_hint = graph.pre(&scc).intersect(&rest_remaining);
+        chain_rec_saturation(&rest_subgraph, &rest_hint, scc_dump);
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;
@@ -104,10 +204,13 @@ mod test {
     use num_bigint::BigInt;
     use test_generator::test_resources;
 
-    use crate::{chain::chain, fwd_bwd::fwd_bwd_scc_decomposition};
+    use crate::{
+        chain::{chain, chain_saturation},
+        fwd_bwd::fwd_bwd_scc_decomposition,
+    };
 
     #[test]
-    fn chain_rec_test() {
+    fn chain_test() {
         let async_graph = basic_async_graph();
         let mut vars = async_graph.variables();
         let var_a = vars.next().unwrap();
@@ -160,6 +263,61 @@ mod test {
         assert!(scc_vec.contains(&b_true));
     }
 
+    // todo deduplicate with `chain_test` - copypasted to check saturation impl real quick
+    #[test]
+    fn chain_saturation_test() {
+        let async_graph = basic_async_graph();
+        let mut vars = async_graph.variables();
+        let var_a = vars.next().unwrap();
+        let var_b = vars.next().unwrap();
+        assert!(vars.next().is_none());
+
+        let unit_set = async_graph.unit_colored_vertices();
+
+        let a_true = unit_set.fix_network_variable(var_a, true);
+        let b_true = unit_set.fix_network_variable(var_b, true);
+        let a_false = unit_set.fix_network_variable(var_a, false);
+        let b_false = unit_set.fix_network_variable(var_b, false);
+
+        assert_eq!(a_true.exact_cardinality(), BigInt::from(2));
+        assert_eq!(b_true.exact_cardinality(), BigInt::from(2));
+        assert_eq!(a_false.exact_cardinality(), BigInt::from(2));
+        assert_eq!(b_false.exact_cardinality(), BigInt::from(2));
+
+        let false_false = a_false.intersect(&b_false);
+        let false_true = a_false.intersect(&b_true);
+        let true_false = a_true.intersect(&b_false);
+        let true_true = a_true.intersect(&b_true);
+
+        assert_eq!(false_false.exact_cardinality(), BigInt::from(1));
+        assert_eq!(false_true.exact_cardinality(), BigInt::from(1));
+        assert_eq!(true_false.exact_cardinality(), BigInt::from(1));
+        assert_eq!(true_true.exact_cardinality(), BigInt::from(1));
+
+        let false_false_post = async_graph.post(&false_false);
+        assert_eq!(false_false_post.exact_cardinality(), BigInt::from(1));
+        assert_eq!(false_false_post, true_false);
+
+        let a_false_post = async_graph.post(&a_false);
+        assert_eq!(a_false_post.exact_cardinality(), BigInt::from(2));
+        assert_eq!(a_false_post, a_true);
+
+        // the chain part
+        println!(
+            "the colors: {:?}",
+            async_graph.unit_colors().exact_cardinality()
+        );
+
+        let scc_vec = chain_saturation(&async_graph).collect::<Vec<_>>();
+
+        assert_eq!(scc_vec.len(), 2);
+
+        // one of the components is { (a=false, b=false), (a=true, b=false) }
+        assert!(scc_vec.contains(&b_false));
+        // the other is { (a=false, b=true), (a=true, b=true) }
+        assert!(scc_vec.contains(&b_true));
+    }
+
     fn basic_async_graph() -> SymbolicAsyncGraph {
         let bool_network = BooleanNetwork::try_from(
             r#"
@@ -185,6 +343,52 @@ mod test {
 
     #[test_resources("./models/bbm-inputs-true/*.aeon")]
     fn compare_chain_fwd_bwd_selected(model_path: &str) {
+        let bn = BooleanNetwork::try_from_file(model_path).unwrap();
+
+        let skip_threshold = if cfg!(feature = "expensive-tests") {
+            14
+        } else {
+            10
+        };
+
+        if bn.num_vars() > skip_threshold {
+            // The network is too large.
+            println!(
+                " >> [{} > {}] Skipping {}.",
+                bn.num_vars(),
+                skip_threshold,
+                model_path
+            );
+            return;
+        }
+
+        // Network has no parameters (no colors).
+        assert_eq!(bn.num_parameters(), 0);
+        assert_eq!(bn.num_implicit_parameters(), 0);
+
+        let graph = SymbolicAsyncGraph::new(&bn).unwrap();
+
+        println!(
+            " >> [{} <= {}] Testing {}.",
+            bn.num_vars(),
+            skip_threshold,
+            model_path
+        );
+
+        println!(" >> Computing FWD-BWD.");
+        let fwd_bwd_scc_set = fwd_bwd_scc_decomposition(&graph).collect::<HashSet<_>>();
+
+        println!(" >> Computing chain.");
+        let chain_scc_set = chain(&graph).collect::<HashSet<_>>();
+
+        println!(" >> Found {} SCCs.", fwd_bwd_scc_set.len());
+
+        assert_eq!(chain_scc_set, fwd_bwd_scc_set);
+    }
+
+    // todo deduplicate with `compare_chain_fwd_bwd_selected` - copypasted to check saturation impl real quick
+    #[test_resources("./models/bbm-inputs-true/*.aeon")]
+    fn compare_chain_saturation_fwd_bwd_selected(model_path: &str) {
         let bn = BooleanNetwork::try_from_file(model_path).unwrap();
 
         let skip_threshold = if cfg!(feature = "expensive-tests") {
