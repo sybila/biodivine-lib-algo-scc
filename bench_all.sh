@@ -19,3 +19,4 @@ ulimit -v 8388608
 
 python3 ./bench.py 1m ./models/bbm-inputs-true ./target/release/fwd_bwd
 python3 ./bench.py 1m ./models/bbm-inputs-true ./target/release/chain
+python3 ./bench.py 1m ./models/bbm-inputs-true ./target/release/chain_saturation
