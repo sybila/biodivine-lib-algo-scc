@@ -3,7 +3,7 @@ use biodivine_lib_param_bn::{
     symbolic_async_graph::{GraphColoredVertices, SymbolicAsyncGraph},
 };
 
-use crate::precondition_graph_not_colored;
+use crate::{hamming::Hamming, precondition_graph_not_colored};
 
 /// does the decomposition of the graph to SCCs
 /// should be made iterative sometime in the future
@@ -194,6 +194,61 @@ fn chain_rec_saturation(
     }
 }
 
+pub fn chain_saturation_hamming_heuristic(
+    graph: &SymbolicAsyncGraph,
+) -> impl Iterator<Item = GraphColoredVertices> {
+    precondition_graph_not_colored(graph);
+
+    let mut scc_dump = Vec::new();
+    if !graph.unit_vertices().is_empty() {
+        chain_rec_saturation_hamming_heuristic(
+            graph,
+            graph.empty_colored_vertices(),
+            &mut scc_dump,
+        );
+    }
+    scc_dump.into_iter()
+}
+
+fn chain_rec_saturation_hamming_heuristic(
+    graph: &SymbolicAsyncGraph,
+    vertices_hint: &GraphColoredVertices,
+    scc_dump: &mut Vec<GraphColoredVertices>,
+) {
+    assert!(!graph.unit_vertices().is_empty());
+
+    let pivot_set = match vertices_hint.is_empty() {
+        true => graph.unit_colored_vertices(),
+        false => vertices_hint,
+    };
+    let pivot = pivot_set.pick_singleton();
+
+    assert!(!pivot.is_empty()); // trivially true; subgraph is nonempty (else returned above)
+
+    let fwd_reachable = fwd_saturation(graph, &pivot);
+
+    let scc = bwd_saturation(&graph.restrict(&fwd_reachable), &pivot);
+
+    // Output the scc.
+    scc_dump.push(scc.clone());
+
+    let fwd_remaining = fwd_reachable.minus(&scc);
+    if !fwd_remaining.is_empty() {
+        let fwd_subgraph = graph.restrict(&fwd_remaining);
+
+        let fwd_hint = pivot.ham_furthest_within(&fwd_remaining); // <-- the difference
+
+        chain_rec_saturation_hamming_heuristic(&fwd_subgraph, &fwd_hint, scc_dump);
+    }
+
+    let rest_remaining = graph.unit_colored_vertices().minus(&fwd_reachable);
+    if !rest_remaining.is_empty() {
+        let rest_subgraph = graph.restrict(&rest_remaining);
+        let rest_hint = graph.pre(&scc).intersect(&rest_remaining);
+        chain_rec_saturation_hamming_heuristic(&rest_subgraph, &rest_hint, scc_dump);
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;
@@ -205,7 +260,7 @@ mod test {
     use test_generator::test_resources;
 
     use crate::{
-        chain::{chain, chain_saturation},
+        chain::{chain, chain_saturation, chain_saturation_hamming_heuristic},
         fwd_bwd::fwd_bwd_scc_decomposition,
     };
 
@@ -425,7 +480,53 @@ mod test {
         let fwd_bwd_scc_set = fwd_bwd_scc_decomposition(&graph).collect::<HashSet<_>>();
 
         println!(" >> Computing chain.");
-        let chain_scc_set = chain(&graph).collect::<HashSet<_>>();
+        let chain_scc_set = chain_saturation(&graph).collect::<HashSet<_>>();
+
+        println!(" >> Found {} SCCs.", fwd_bwd_scc_set.len());
+
+        assert_eq!(chain_scc_set, fwd_bwd_scc_set);
+    }
+
+    // todo deduplicate with `compare_chain_fwd_bwd_selected` - copypasted to check saturation impl real quick
+    #[test_resources("./models/bbm-inputs-true/*.aeon")]
+    fn compare_chain_rec_saturation_hamming_heuristic_fwd_bwd_selected(model_path: &str) {
+        let bn = BooleanNetwork::try_from_file(model_path).unwrap();
+
+        let skip_threshold = if cfg!(feature = "expensive-tests") {
+            14
+        } else {
+            10
+        };
+
+        if bn.num_vars() > skip_threshold {
+            // The network is too large.
+            println!(
+                " >> [{} > {}] Skipping {}.",
+                bn.num_vars(),
+                skip_threshold,
+                model_path
+            );
+            return;
+        }
+
+        // Network has no parameters (no colors).
+        assert_eq!(bn.num_parameters(), 0);
+        assert_eq!(bn.num_implicit_parameters(), 0);
+
+        let graph = SymbolicAsyncGraph::new(&bn).unwrap();
+
+        println!(
+            " >> [{} <= {}] Testing {}.",
+            bn.num_vars(),
+            skip_threshold,
+            model_path
+        );
+
+        println!(" >> Computing FWD-BWD.");
+        let fwd_bwd_scc_set = fwd_bwd_scc_decomposition(&graph).collect::<HashSet<_>>();
+
+        println!(" >> Computing chain.");
+        let chain_scc_set = chain_saturation_hamming_heuristic(&graph).collect::<HashSet<_>>();
 
         println!(" >> Found {} SCCs.", fwd_bwd_scc_set.len());
 
