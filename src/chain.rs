@@ -250,7 +250,7 @@ fn chain_rec_saturation_hamming_heuristic(
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use std::collections::HashSet;
 
     use biodivine_lib_param_bn::{
