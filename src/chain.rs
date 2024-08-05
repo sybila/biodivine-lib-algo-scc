@@ -254,7 +254,9 @@ mod test {
     use std::collections::HashSet;
 
     use biodivine_lib_param_bn::{
-        biodivine_std::traits::Set, symbolic_async_graph::SymbolicAsyncGraph, BooleanNetwork,
+        biodivine_std::traits::Set,
+        symbolic_async_graph::{GraphColoredVertices, SymbolicAsyncGraph},
+        BooleanNetwork,
     };
     use num_bigint::BigInt;
     use test_generator::test_resources;
@@ -263,115 +265,6 @@ mod test {
         chain::{chain, chain_saturation, chain_saturation_hamming_heuristic},
         fwd_bwd::fwd_bwd_scc_decomposition,
     };
-
-    #[test]
-    fn chain_test() {
-        let async_graph = basic_async_graph();
-        let mut vars = async_graph.variables();
-        let var_a = vars.next().unwrap();
-        let var_b = vars.next().unwrap();
-        assert!(vars.next().is_none());
-
-        let unit_set = async_graph.unit_colored_vertices();
-
-        let a_true = unit_set.fix_network_variable(var_a, true);
-        let b_true = unit_set.fix_network_variable(var_b, true);
-        let a_false = unit_set.fix_network_variable(var_a, false);
-        let b_false = unit_set.fix_network_variable(var_b, false);
-
-        assert_eq!(a_true.exact_cardinality(), BigInt::from(2));
-        assert_eq!(b_true.exact_cardinality(), BigInt::from(2));
-        assert_eq!(a_false.exact_cardinality(), BigInt::from(2));
-        assert_eq!(b_false.exact_cardinality(), BigInt::from(2));
-
-        let false_false = a_false.intersect(&b_false);
-        let false_true = a_false.intersect(&b_true);
-        let true_false = a_true.intersect(&b_false);
-        let true_true = a_true.intersect(&b_true);
-
-        assert_eq!(false_false.exact_cardinality(), BigInt::from(1));
-        assert_eq!(false_true.exact_cardinality(), BigInt::from(1));
-        assert_eq!(true_false.exact_cardinality(), BigInt::from(1));
-        assert_eq!(true_true.exact_cardinality(), BigInt::from(1));
-
-        let false_false_post = async_graph.post(&false_false);
-        assert_eq!(false_false_post.exact_cardinality(), BigInt::from(1));
-        assert_eq!(false_false_post, true_false);
-
-        let a_false_post = async_graph.post(&a_false);
-        assert_eq!(a_false_post.exact_cardinality(), BigInt::from(2));
-        assert_eq!(a_false_post, a_true);
-
-        // the chain part
-        println!(
-            "the colors: {:?}",
-            async_graph.unit_colors().exact_cardinality()
-        );
-
-        let scc_vec = chain(&async_graph).collect::<Vec<_>>();
-
-        assert_eq!(scc_vec.len(), 2);
-
-        // one of the components is { (a=false, b=false), (a=true, b=false) }
-        assert!(scc_vec.contains(&b_false));
-        // the other is { (a=false, b=true), (a=true, b=true) }
-        assert!(scc_vec.contains(&b_true));
-    }
-
-    // todo deduplicate with `chain_test` - copypasted to check saturation impl real quick
-    #[test]
-    fn chain_saturation_test() {
-        let async_graph = basic_async_graph();
-        let mut vars = async_graph.variables();
-        let var_a = vars.next().unwrap();
-        let var_b = vars.next().unwrap();
-        assert!(vars.next().is_none());
-
-        let unit_set = async_graph.unit_colored_vertices();
-
-        let a_true = unit_set.fix_network_variable(var_a, true);
-        let b_true = unit_set.fix_network_variable(var_b, true);
-        let a_false = unit_set.fix_network_variable(var_a, false);
-        let b_false = unit_set.fix_network_variable(var_b, false);
-
-        assert_eq!(a_true.exact_cardinality(), BigInt::from(2));
-        assert_eq!(b_true.exact_cardinality(), BigInt::from(2));
-        assert_eq!(a_false.exact_cardinality(), BigInt::from(2));
-        assert_eq!(b_false.exact_cardinality(), BigInt::from(2));
-
-        let false_false = a_false.intersect(&b_false);
-        let false_true = a_false.intersect(&b_true);
-        let true_false = a_true.intersect(&b_false);
-        let true_true = a_true.intersect(&b_true);
-
-        assert_eq!(false_false.exact_cardinality(), BigInt::from(1));
-        assert_eq!(false_true.exact_cardinality(), BigInt::from(1));
-        assert_eq!(true_false.exact_cardinality(), BigInt::from(1));
-        assert_eq!(true_true.exact_cardinality(), BigInt::from(1));
-
-        let false_false_post = async_graph.post(&false_false);
-        assert_eq!(false_false_post.exact_cardinality(), BigInt::from(1));
-        assert_eq!(false_false_post, true_false);
-
-        let a_false_post = async_graph.post(&a_false);
-        assert_eq!(a_false_post.exact_cardinality(), BigInt::from(2));
-        assert_eq!(a_false_post, a_true);
-
-        // the chain part
-        println!(
-            "the colors: {:?}",
-            async_graph.unit_colors().exact_cardinality()
-        );
-
-        let scc_vec = chain_saturation(&async_graph).collect::<Vec<_>>();
-
-        assert_eq!(scc_vec.len(), 2);
-
-        // one of the components is { (a=false, b=false), (a=true, b=false) }
-        assert!(scc_vec.contains(&b_false));
-        // the other is { (a=false, b=true), (a=true, b=true) }
-        assert!(scc_vec.contains(&b_true));
-    }
 
     fn basic_async_graph() -> SymbolicAsyncGraph {
         let bool_network = BooleanNetwork::try_from(
@@ -386,6 +279,78 @@ mod test {
         SymbolicAsyncGraph::new(&bool_network).unwrap()
     }
 
+    fn basic_decomposition<F, I>(decomposition_fn: F)
+    where
+        F: Fn(&SymbolicAsyncGraph) -> I,
+        I: Iterator<Item = GraphColoredVertices>,
+    {
+        let async_graph = basic_async_graph();
+        let mut vars = async_graph.variables();
+        let var_a = vars.next().unwrap();
+        let var_b = vars.next().unwrap();
+        assert!(vars.next().is_none());
+
+        let unit_set = async_graph.unit_colored_vertices();
+
+        let a_true = unit_set.fix_network_variable(var_a, true);
+        let b_true = unit_set.fix_network_variable(var_b, true);
+        let a_false = unit_set.fix_network_variable(var_a, false);
+        let b_false = unit_set.fix_network_variable(var_b, false);
+
+        assert_eq!(a_true.exact_cardinality(), BigInt::from(2));
+        assert_eq!(b_true.exact_cardinality(), BigInt::from(2));
+        assert_eq!(a_false.exact_cardinality(), BigInt::from(2));
+        assert_eq!(b_false.exact_cardinality(), BigInt::from(2));
+
+        let false_false = a_false.intersect(&b_false);
+        let false_true = a_false.intersect(&b_true);
+        let true_false = a_true.intersect(&b_false);
+        let true_true = a_true.intersect(&b_true);
+
+        assert_eq!(false_false.exact_cardinality(), BigInt::from(1));
+        assert_eq!(false_true.exact_cardinality(), BigInt::from(1));
+        assert_eq!(true_false.exact_cardinality(), BigInt::from(1));
+        assert_eq!(true_true.exact_cardinality(), BigInt::from(1));
+
+        let false_false_post = async_graph.post(&false_false);
+        assert_eq!(false_false_post.exact_cardinality(), BigInt::from(1));
+        assert_eq!(false_false_post, true_false);
+
+        let a_false_post = async_graph.post(&a_false);
+        assert_eq!(a_false_post.exact_cardinality(), BigInt::from(2));
+        assert_eq!(a_false_post, a_true);
+
+        // the chain part
+        println!(
+            "the colors: {:?}",
+            async_graph.unit_colors().exact_cardinality()
+        );
+
+        let scc_vec = decomposition_fn(&async_graph).collect::<Vec<_>>();
+
+        assert_eq!(scc_vec.len(), 2);
+
+        // one of the components is { (a=false, b=false), (a=true, b=false) }
+        assert!(scc_vec.contains(&b_false));
+        // the other is { (a=false, b=true), (a=true, b=true) }
+        assert!(scc_vec.contains(&b_true));
+    }
+
+    #[test]
+    fn chain_test() {
+        basic_decomposition(chain);
+    }
+
+    #[test]
+    fn chain_saturation_test() {
+        basic_decomposition(chain_saturation);
+    }
+
+    #[test]
+    fn chain_saturation_hamming_heuristic_test() {
+        basic_decomposition(chain_saturation_hamming_heuristic);
+    }
+
     #[test]
     fn compare_chain_fwd_bwd_basic_graph() {
         let async_graph = basic_async_graph();
@@ -396,140 +361,66 @@ mod test {
         assert_eq!(chain_scc_set, fwd_bwd_scc_set);
     }
 
+    fn compare_fn_with_fwd_bwd<F, I>(model_path: &str, decomposition_fn: F)
+    where
+        F: Fn(&SymbolicAsyncGraph) -> I,
+        I: Iterator<Item = GraphColoredVertices>,
+    {
+        let bn = BooleanNetwork::try_from_file(model_path).unwrap();
+
+        let skip_threshold = if cfg!(feature = "expensive-tests") {
+            14
+        } else {
+            10
+        };
+
+        if bn.num_vars() > skip_threshold {
+            // The network is too large.
+            println!(
+                " >> [{} > {}] Skipping {}.",
+                bn.num_vars(),
+                skip_threshold,
+                model_path
+            );
+            return;
+        }
+
+        // Network has no parameters (no colors).
+        assert_eq!(bn.num_parameters(), 0);
+        assert_eq!(bn.num_implicit_parameters(), 0);
+
+        let graph = SymbolicAsyncGraph::new(&bn).unwrap();
+
+        println!(
+            " >> [{} <= {}] Testing {}.",
+            bn.num_vars(),
+            skip_threshold,
+            model_path
+        );
+
+        println!(" >> Computing FWD-BWD.");
+        let fwd_bwd_scc_set = fwd_bwd_scc_decomposition(&graph).collect::<HashSet<_>>();
+
+        println!(" >> Computing with {}.", std::any::type_name::<F>());
+        let chain_scc_set = decomposition_fn(&graph).collect::<HashSet<_>>();
+
+        println!(" >> Found {} SCCs.", fwd_bwd_scc_set.len());
+
+        assert_eq!(chain_scc_set, fwd_bwd_scc_set);
+    }
+
     #[test_resources("./models/bbm-inputs-true/*.aeon")]
     fn compare_chain_fwd_bwd_selected(model_path: &str) {
-        let bn = BooleanNetwork::try_from_file(model_path).unwrap();
-
-        let skip_threshold = if cfg!(feature = "expensive-tests") {
-            14
-        } else {
-            10
-        };
-
-        if bn.num_vars() > skip_threshold {
-            // The network is too large.
-            println!(
-                " >> [{} > {}] Skipping {}.",
-                bn.num_vars(),
-                skip_threshold,
-                model_path
-            );
-            return;
-        }
-
-        // Network has no parameters (no colors).
-        assert_eq!(bn.num_parameters(), 0);
-        assert_eq!(bn.num_implicit_parameters(), 0);
-
-        let graph = SymbolicAsyncGraph::new(&bn).unwrap();
-
-        println!(
-            " >> [{} <= {}] Testing {}.",
-            bn.num_vars(),
-            skip_threshold,
-            model_path
-        );
-
-        println!(" >> Computing FWD-BWD.");
-        let fwd_bwd_scc_set = fwd_bwd_scc_decomposition(&graph).collect::<HashSet<_>>();
-
-        println!(" >> Computing chain.");
-        let chain_scc_set = chain(&graph).collect::<HashSet<_>>();
-
-        println!(" >> Found {} SCCs.", fwd_bwd_scc_set.len());
-
-        assert_eq!(chain_scc_set, fwd_bwd_scc_set);
+        compare_fn_with_fwd_bwd(model_path, chain);
     }
 
-    // todo deduplicate with `compare_chain_fwd_bwd_selected` - copypasted to check saturation impl real quick
     #[test_resources("./models/bbm-inputs-true/*.aeon")]
     fn compare_chain_saturation_fwd_bwd_selected(model_path: &str) {
-        let bn = BooleanNetwork::try_from_file(model_path).unwrap();
-
-        let skip_threshold = if cfg!(feature = "expensive-tests") {
-            14
-        } else {
-            10
-        };
-
-        if bn.num_vars() > skip_threshold {
-            // The network is too large.
-            println!(
-                " >> [{} > {}] Skipping {}.",
-                bn.num_vars(),
-                skip_threshold,
-                model_path
-            );
-            return;
-        }
-
-        // Network has no parameters (no colors).
-        assert_eq!(bn.num_parameters(), 0);
-        assert_eq!(bn.num_implicit_parameters(), 0);
-
-        let graph = SymbolicAsyncGraph::new(&bn).unwrap();
-
-        println!(
-            " >> [{} <= {}] Testing {}.",
-            bn.num_vars(),
-            skip_threshold,
-            model_path
-        );
-
-        println!(" >> Computing FWD-BWD.");
-        let fwd_bwd_scc_set = fwd_bwd_scc_decomposition(&graph).collect::<HashSet<_>>();
-
-        println!(" >> Computing chain.");
-        let chain_scc_set = chain_saturation(&graph).collect::<HashSet<_>>();
-
-        println!(" >> Found {} SCCs.", fwd_bwd_scc_set.len());
-
-        assert_eq!(chain_scc_set, fwd_bwd_scc_set);
+        compare_fn_with_fwd_bwd(model_path, chain_saturation);
     }
 
-    // todo deduplicate with `compare_chain_fwd_bwd_selected` - copypasted to check saturation impl real quick
     #[test_resources("./models/bbm-inputs-true/*.aeon")]
-    fn compare_chain_rec_saturation_hamming_heuristic_fwd_bwd_selected(model_path: &str) {
-        let bn = BooleanNetwork::try_from_file(model_path).unwrap();
-
-        let skip_threshold = if cfg!(feature = "expensive-tests") {
-            14
-        } else {
-            10
-        };
-
-        if bn.num_vars() > skip_threshold {
-            // The network is too large.
-            println!(
-                " >> [{} > {}] Skipping {}.",
-                bn.num_vars(),
-                skip_threshold,
-                model_path
-            );
-            return;
-        }
-
-        // Network has no parameters (no colors).
-        assert_eq!(bn.num_parameters(), 0);
-        assert_eq!(bn.num_implicit_parameters(), 0);
-
-        let graph = SymbolicAsyncGraph::new(&bn).unwrap();
-
-        println!(
-            " >> [{} <= {}] Testing {}.",
-            bn.num_vars(),
-            skip_threshold,
-            model_path
-        );
-
-        println!(" >> Computing FWD-BWD.");
-        let fwd_bwd_scc_set = fwd_bwd_scc_decomposition(&graph).collect::<HashSet<_>>();
-
-        println!(" >> Computing chain.");
-        let chain_scc_set = chain_saturation_hamming_heuristic(&graph).collect::<HashSet<_>>();
-
-        println!(" >> Found {} SCCs.", fwd_bwd_scc_set.len());
-
-        assert_eq!(chain_scc_set, fwd_bwd_scc_set);
+    fn compare_chain_saturation_hamming_heuristic_fwd_bwd_selected(model_path: &str) {
+        compare_fn_with_fwd_bwd(model_path, chain_saturation_hamming_heuristic);
     }
 }
