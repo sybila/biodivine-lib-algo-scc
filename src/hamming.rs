@@ -157,7 +157,6 @@ fn rec_max_dist_bad(
     }
 }
 
-#[allow(unused)] // todo remove
 fn max_dist(
     choice_set: &GraphColoredVertices,
     pivot_singleton_valuation: &BddValuation,
@@ -191,8 +190,28 @@ fn max_dist(
         &mut valuation_cache,
     );
 
-    let (result_valuation, _) =
+    let (mut unsanitized_result_valuation, _) =
         valuation_cache[choice_set.vertices().as_bdd().root_pointer().to_index()].clone(); // todo hopefully the correct way to get the index of the root
+
+    let to_be_filled_up_to_idx = if choice_set.as_bdd().root_pointer().is_one() {
+        println!("top branch");
+        pivot_singleton_valuation.to_values().len() // weird way to get the total count of the variables in the graph
+    } else {
+        // get the root-variable's index *within the valuation* (ie the roots variable id)
+        let variable_0 = choice_set
+            .as_bdd()
+            .var_of(choice_set.as_bdd().root_pointer());
+        variable_0.to_index()
+    };
+    println!("the to be filled up to is {}", to_be_filled_up_to_idx);
+
+    for idx in 0..to_be_filled_up_to_idx {
+        println!("accessing with idx {}", idx);
+        let negated_value = !pivot_singleton_valuation.value(BddVariable::from_index(idx));
+        unsanitized_result_valuation.set_value(BddVariable::from_index(idx), negated_value);
+    }
+
+    let result_valuation = unsanitized_result_valuation;
 
     let result_valuation_bdd = Bdd::from(result_valuation);
 
@@ -216,7 +235,8 @@ fn max_dist(
     res
 }
 
-#[allow(unused)] // todo remove
+/// traverses the choice_set to find the "most distant" valuation possible
+/// does not update the valuation in the root if there are variables missing "above it"
 fn rec_max_dist(
     curr_choice_set_node_ptr: BddPointer,
     choice_set: &Bdd,
@@ -409,9 +429,9 @@ mod tests {
         assert_eq!(false_false.ham_furthest_within(&false_false), false_false);
 
         // must choose the most distant one - all negated
-        // assert_eq!(false_false.ham_furthest_within(&unit_set), true_true);
-        // assert_eq!(false_true.ham_furthest_within(&unit_set), true_false);
-        // assert_eq!(true_false.ham_furthest_within(&unit_set), false_true);
+        assert_eq!(false_false.ham_furthest_within(&unit_set), true_true);
+        assert_eq!(false_true.ham_furthest_within(&unit_set), true_false);
+        assert_eq!(true_false.ham_furthest_within(&unit_set), false_true);
         assert_eq!(true_true.ham_furthest_within(&unit_set), false_false);
     }
 
