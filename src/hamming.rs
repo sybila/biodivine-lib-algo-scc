@@ -26,21 +26,9 @@ fn max_dist(
     pivot_singleton_valuation: &BddValuation,
 ) -> GraphColoredVertices {
     let mut valuation_cache = {
-        let some_valuation = {
-            let mut valuation = pivot_singleton_valuation.clone();
-            for idx in 0..choice_set.vertices().as_bdd().num_vars() {
-                let some_value = false;
-                valuation.set_value(BddVariable::from_index(idx as usize), some_value);
-            }
-            valuation
-            // todo no need to initialize the whole valuation everywhere -> eg bottom layer needs just a single "bit"
-            //  (this increases the bigO)
-            //  likey just use Vec<bool> instead of BddValuation
-        };
-
-        let mut cache = Vec::new();
+        let mut cache = Vec::<Option<(usize, Vec<bool>)>>::new(); // keep in mind the valuation is reversed
         for _ in 0..choice_set.vertices().as_bdd().clone().to_nodes().len() {
-            cache.push((some_valuation.clone(), None));
+            cache.push(None);
         }
 
         cache
@@ -53,8 +41,10 @@ fn max_dist(
         &mut valuation_cache,
     );
 
-    let (mut unsanitized_result_valuation, _) =
-        valuation_cache[choice_set.vertices().as_bdd().root_pointer().to_index()].clone();
+    let (_, mut unsanitized_result_valuation) = valuation_cache
+        [choice_set.vertices().as_bdd().root_pointer().to_index()]
+    .clone()
+    .expect("cache of the root should be filled now");
 
     let to_be_filled_up_to_idx = if choice_set.as_bdd().root_pointer().is_one() {
         // get the total count of the variables in the graph (weird way to do so)
@@ -67,14 +57,18 @@ fn max_dist(
         variable_0.to_index()
     };
 
-    for idx in 0..to_be_filled_up_to_idx {
+    for idx in (0..to_be_filled_up_to_idx).rev() {
         let negated_value = !pivot_singleton_valuation.value(BddVariable::from_index(idx));
-        unsanitized_result_valuation.set_value(BddVariable::from_index(idx), negated_value);
+        unsanitized_result_valuation.push(negated_value);
     }
 
-    let result_valuation = unsanitized_result_valuation;
+    let result_valuation_vec = unsanitized_result_valuation;
+    let mut actual_result_valuation = pivot_singleton_valuation.clone();
+    for (idx, value) in result_valuation_vec.into_iter().rev().enumerate() {
+        actual_result_valuation.set_value(BddVariable::from_index(idx), value);
+    }
 
-    let res = choice_set.copy(Bdd::from(result_valuation));
+    let res = choice_set.copy(Bdd::from(actual_result_valuation));
 
     assert!(res.is_singleton());
 
@@ -87,24 +81,23 @@ fn rec_max_dist(
     curr_choice_set_node_ptr: BddPointer,
     choice_set: &Bdd,
     pivot_singleton_valuation: &BddValuation,
-    valuation_cache: &mut Vec<(BddValuation, Option<usize>)>,
+    // todo could avoid using `Vec<_>`s altogether - just keep the "chosen child" in the cache -> do not forget about the skipped variables
+    valuation_cache: &mut Vec<Option<(usize, Vec<bool>)>>,
 ) {
-    if valuation_cache[curr_choice_set_node_ptr.to_index()]
-        .1
-        .is_some()
-    {
+    if valuation_cache[curr_choice_set_node_ptr.to_index()].is_some() {
         return; // already "solved"
     }
 
     if curr_choice_set_node_ptr.is_zero() {
         // should already be set to `None` - do this just to be sure
-        valuation_cache[curr_choice_set_node_ptr.to_index()].1 = None;
+        valuation_cache[curr_choice_set_node_ptr.to_index()] = None;
         return;
     }
 
     if curr_choice_set_node_ptr.is_one() {
         // signal that this is branch should be considered -> set to Some
-        valuation_cache[curr_choice_set_node_ptr.to_index()].1 = Some(0 /* no distance */);
+        valuation_cache[curr_choice_set_node_ptr.to_index()] =
+            Some((0 /* no distance */, Vec::new()));
         return;
     }
 
@@ -129,95 +122,102 @@ fn rec_max_dist(
         &valuation_cache[low_child_ptr.to_index()],
         &valuation_cache[high_child_ptr.to_index()],
     ) {
-        ((low_child_val, Some(low_child_dist)), (high_child_val, Some(high_child_dist))) => {
+        (Some((low_child_dist, low_child_val)), Some((high_child_dist, high_child_val))) => {
             let mut this_valuation_high = high_child_val.clone();
             let mut this_dist_high = *high_child_dist;
-            this_valuation_high.set_value(choice_set.var_of(curr_choice_set_node_ptr), true);
 
             if !pivot_singleton_valuation.value(choice_set.var_of(curr_choice_set_node_ptr)) {
                 // notice the presence of negation - want neq
                 this_dist_high += 1;
             }
 
-            for idx in (choice_set.var_of(curr_choice_set_node_ptr).to_index() + 1)
-                ..choice_set.var_of(high_child_ptr).to_index()
+            for idx in ((choice_set.var_of(curr_choice_set_node_ptr).to_index() + 1)
+                ..choice_set.var_of(high_child_ptr).to_index())
+                .rev()
             {
                 let negated_value = !pivot_singleton_valuation.value(BddVariable::from_index(idx));
-                this_valuation_high.set_value(BddVariable::from_index(idx), negated_value);
+                this_valuation_high.push(negated_value);
                 this_dist_high += 1;
             }
+            this_valuation_high.push(true);
 
             let mut this_valuation_low = low_child_val.clone();
             let mut this_dist_low = *low_child_dist;
-            this_valuation_low.set_value(choice_set.var_of(curr_choice_set_node_ptr), false);
 
             if pivot_singleton_valuation.value(choice_set.var_of(curr_choice_set_node_ptr)) {
                 // notice the absence of negation - want neq
                 this_dist_low += 1;
             }
 
-            for idx in (choice_set.var_of(curr_choice_set_node_ptr).to_index() + 1)
-                ..choice_set.var_of(low_child_ptr).to_index()
+            for idx in ((choice_set.var_of(curr_choice_set_node_ptr).to_index() + 1)
+                ..choice_set.var_of(low_child_ptr).to_index())
+                .rev()
             {
                 let negated_value = !pivot_singleton_valuation.value(BddVariable::from_index(idx));
-                this_valuation_low.set_value(BddVariable::from_index(idx), negated_value);
+                this_valuation_low.push(negated_value);
                 this_dist_low += 1;
             }
+            this_valuation_low.push(false);
 
             if this_dist_low < this_dist_high {
                 valuation_cache[curr_choice_set_node_ptr.to_index()] =
-                    (this_valuation_high, Some(this_dist_high));
+                    // (this_valuation_high, Some(this_dist_high));
+                    Some((this_dist_high, this_valuation_high));
             } else {
                 valuation_cache[curr_choice_set_node_ptr.to_index()] =
-                    (this_valuation_low, Some(this_dist_low));
+                    // (this_valuation_low, Some(this_dist_low));
+                    Some((this_dist_low, this_valuation_low));
             }
         }
 
-        ((low_child_val, Some(low_child_dist)), (_, None)) => {
+        (Some((low_child_dist, low_child_val)), None) => {
             let mut this_valuation = low_child_val.clone();
             let mut this_dist = *low_child_dist;
-            this_valuation.set_value(choice_set.var_of(curr_choice_set_node_ptr), false);
 
             if pivot_singleton_valuation.value(choice_set.var_of(curr_choice_set_node_ptr)) {
                 // notice the absence of negation - want neq
                 this_dist += 1;
             }
 
-            for idx in (choice_set.var_of(curr_choice_set_node_ptr).to_index() + 1)
-                ..choice_set.var_of(low_child_ptr).to_index()
+            for idx in ((choice_set.var_of(curr_choice_set_node_ptr).to_index() + 1)
+                ..choice_set.var_of(low_child_ptr).to_index())
+                .rev()
             {
                 let negated_value = !pivot_singleton_valuation.value(BddVariable::from_index(idx));
-                this_valuation.set_value(BddVariable::from_index(idx), negated_value);
+                this_valuation.push(negated_value);
                 this_dist += 1;
             }
+            this_valuation.push(false);
 
             valuation_cache[curr_choice_set_node_ptr.to_index()] =
-                (this_valuation, Some(this_dist));
+                Some((this_dist, this_valuation));
         }
 
-        ((_, None), (high_child_val, Some(high_child_dist))) => {
+        (None, Some((high_child_dist, high_child_val))) => {
             let mut this_valuation = high_child_val.clone();
             let mut this_dist = *high_child_dist;
-            this_valuation.set_value(choice_set.var_of(curr_choice_set_node_ptr), true);
 
             if !pivot_singleton_valuation.value(choice_set.var_of(curr_choice_set_node_ptr)) {
                 // notice the presence of negation - want neq
                 this_dist += 1;
             }
 
-            for idx in (choice_set.var_of(curr_choice_set_node_ptr).to_index() + 1)
-                ..choice_set.var_of(high_child_ptr).to_index()
+            for idx in ((choice_set.var_of(curr_choice_set_node_ptr).to_index() + 1)
+                ..choice_set.var_of(high_child_ptr).to_index())
+                .rev()
             {
                 let negated_value = !pivot_singleton_valuation.value(BddVariable::from_index(idx));
-                this_valuation.set_value(BddVariable::from_index(idx), negated_value);
+                this_valuation.push(negated_value);
                 this_dist += 1;
             }
+            this_valuation.push(true);
 
             valuation_cache[curr_choice_set_node_ptr.to_index()] =
-                (this_valuation, Some(this_dist));
+                // (this_valuation, Some(this_dist));
+                Some((this_dist, this_valuation));
         }
 
-        ((_, None), (_, None)) => {
+        (None, None) => {
             unreachable!()
         }
     }
