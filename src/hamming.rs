@@ -21,142 +21,6 @@ impl Hamming for GraphColoredVertices {
     }
 }
 
-fn max_dist_bad(
-    choice_set: &GraphColoredVertices,
-    pivot_singleton_valuation: &BddValuation,
-) -> GraphColoredVertices {
-    // let mut result_valuation = BddPartialValuation::from(pivot_singleton_valuation.clone()); // todo maybe `Partial...` not needed
-
-    let (_, result_valuation) = rec_max_dist_bad(
-        choice_set.as_bdd().root_pointer(),
-        choice_set.vertices().as_bdd(),
-        pivot_singleton_valuation,
-    )
-    .expect("a valid assignment should be found -> proper distance should be returned");
-
-    let result_valuation_bdd = Bdd::from(result_valuation);
-    println!(
-        "result valuation: {:?}",
-        result_valuation_bdd.first_valuation()
-    ); // todo debug print -> remove
-
-    let res = choice_set.copy(result_valuation_bdd.clone());
-
-    assert_eq!(res.as_bdd().to_owned(), result_valuation_bdd); // todo debug assert -> remove
-
-    assert!(res.is_singleton());
-
-    res
-}
-
-// todo do not use recursive alg
-fn rec_max_dist_bad(
-    curr_choice_set_node_ptr: BddPointer,
-    choice_set: &Bdd,
-    pivot_singleton_valuation: &BddValuation,
-) -> Option<(usize, BddValuation)> {
-    if curr_choice_set_node_ptr.is_zero() {
-        return None; // this path (valuation) does not belong to the choice set
-    }
-
-    if curr_choice_set_node_ptr.is_one() {
-        // todo this clone increases the complexity -> use "caches" (two valuations as &mut params) or just push to raw Vec<bool>
-        let mut valuation = pivot_singleton_valuation.clone();
-        for idx in 0..choice_set.num_vars() {
-            let fixed_value = true; // arbitrary choice; the point is that it *has some* fixed value
-            valuation.set_value(BddVariable::from_index(idx as usize), fixed_value);
-        }
-
-        return Some((0, valuation));
-    }
-
-    let low_child_ptr = choice_set.low_link_of(curr_choice_set_node_ptr);
-    let high_child_ptr = choice_set.high_link_of(curr_choice_set_node_ptr);
-
-    let this_node_var = choice_set.var_of(curr_choice_set_node_ptr);
-    let low_child_var = choice_set.var_of(low_child_ptr);
-    let high_child_var = choice_set.var_of(high_child_ptr);
-
-    let mut low_child = rec_max_dist_bad(low_child_ptr, choice_set, pivot_singleton_valuation);
-    let mut high_child = rec_max_dist_bad(high_child_ptr, choice_set, pivot_singleton_valuation);
-
-    low_child
-        .iter_mut()
-        .for_each(|(low_child_distance, low_child_valuation)| {
-            for idx in (this_node_var.to_index() + 1)..low_child_var.to_index() {
-                // this was also wrong; must set it to the negation of the current node in the "source"
-                // ~~let fixed_value = false; // arbitrary choice; the point is that it *has some* fixed value~~
-                let negated_value = !pivot_singleton_valuation.value(BddVariable::from_index(idx));
-                low_child_valuation.set_value(BddVariable::from_index(idx), negated_value);
-                *low_child_distance += 1;
-            }
-        });
-
-    high_child
-        .iter_mut()
-        .for_each(|(high_child_distance, high_child_valuation)| {
-            for idx in (this_node_var.to_index() + 1)..high_child_var.to_index() {
-                // this was also wrong; must set it to the negation of the current node in the "source"
-                // ~~let fixed_value = false; // arbitrary choice; the point is that it *has some* fixed value~~
-                let negated_value = !pivot_singleton_valuation.value(BddVariable::from_index(idx));
-                high_child_valuation.set_value(BddVariable::from_index(idx), negated_value);
-                *high_child_distance += 1;
-            }
-        });
-
-    if pivot_singleton_valuation.value(choice_set.var_of(curr_choice_set_node_ptr)) {
-        low_child.iter_mut().for_each(|(distance, _)| {
-            *distance += 1;
-        });
-    } else {
-        high_child.iter_mut().for_each(|(distance, _)| {
-            *distance += 1;
-        });
-    }
-
-    match (low_child, high_child) {
-        (
-            Some((low_child_distance, low_child_valuation)),
-            Some((high_child_distance, high_child_valuation)),
-        ) => {
-            println!("--------------------- in the both some branch");
-            // prefer greater distance
-            if low_child_distance < high_child_distance {
-                let high_child_valuation = {
-                    let mut valuation = high_child_valuation;
-                    valuation.set_value(this_node_var, true);
-                    valuation
-                };
-                Some((high_child_distance, high_child_valuation))
-            } else {
-                let low_child_valuation = {
-                    let mut valuation = low_child_valuation;
-                    valuation.set_value(this_node_var, false);
-                    valuation
-                };
-                Some((low_child_distance, low_child_valuation))
-            }
-        }
-        (Some((low_hild_distance, low_child_valuation)), None) => {
-            let low_child_valuation = {
-                let mut valuation = low_child_valuation;
-                valuation.set_value(this_node_var, false);
-                valuation
-            };
-            Some((low_hild_distance, low_child_valuation))
-        }
-        (None, Some((high_child_distance, high_child_valuation))) => {
-            let high_child_valuation = {
-                let mut valuation = high_child_valuation;
-                valuation.set_value(this_node_var, true);
-                valuation
-            };
-            Some((high_child_distance, high_child_valuation))
-        }
-        (None, None) => unreachable!(),
-    }
-}
-
 fn max_dist(
     choice_set: &GraphColoredVertices,
     pivot_singleton_valuation: &BddValuation,
@@ -176,7 +40,6 @@ fn max_dist(
 
         let mut cache = Vec::new();
         for _ in 0..choice_set.vertices().as_bdd().clone().to_nodes().len() {
-            // todo off by one (terminal nodes)?
             cache.push((some_valuation.clone(), None));
         }
 
@@ -191,11 +54,11 @@ fn max_dist(
     );
 
     let (mut unsanitized_result_valuation, _) =
-        valuation_cache[choice_set.vertices().as_bdd().root_pointer().to_index()].clone(); // todo hopefully the correct way to get the index of the root
+        valuation_cache[choice_set.vertices().as_bdd().root_pointer().to_index()].clone();
 
     let to_be_filled_up_to_idx = if choice_set.as_bdd().root_pointer().is_one() {
-        println!("top branch");
-        pivot_singleton_valuation.to_values().len() // weird way to get the total count of the variables in the graph
+        // get the total count of the variables in the graph (weird way to do so)
+        pivot_singleton_valuation.to_values().len()
     } else {
         // get the root-variable's index *within the valuation* (ie the roots variable id)
         let variable_0 = choice_set
@@ -203,34 +66,17 @@ fn max_dist(
             .var_of(choice_set.as_bdd().root_pointer());
         variable_0.to_index()
     };
-    println!("the to be filled up to is {}", to_be_filled_up_to_idx);
 
     for idx in 0..to_be_filled_up_to_idx {
-        println!("accessing with idx {}", idx);
         let negated_value = !pivot_singleton_valuation.value(BddVariable::from_index(idx));
         unsanitized_result_valuation.set_value(BddVariable::from_index(idx), negated_value);
     }
 
     let result_valuation = unsanitized_result_valuation;
 
-    let result_valuation_bdd = Bdd::from(result_valuation);
-
-    let res = choice_set.copy(result_valuation_bdd.clone());
-
-    assert_eq!(res.as_bdd().to_owned(), result_valuation_bdd); // todo debug assert -> remove
+    let res = choice_set.copy(Bdd::from(result_valuation));
 
     assert!(res.is_singleton());
-
-    let single_valuation = res
-        .vertices()
-        .as_bdd()
-        .first_valuation()
-        .unwrap()
-        .to_values();
-    // .into_iter()
-    // .map(|(_, the_bool)| the_bool)
-    // .collect::<Vec<_>>();
-    println!("returning {:?}", single_valuation);
 
     res
 }
@@ -251,13 +97,13 @@ fn rec_max_dist(
     }
 
     if curr_choice_set_node_ptr.is_zero() {
-        // should already be set to `None` -> // todo comment out once working
+        // should already be set to `None` - do this just to be sure
         valuation_cache[curr_choice_set_node_ptr.to_index()].1 = None;
         return;
     }
 
     if curr_choice_set_node_ptr.is_one() {
-        // signal that this is branch should be considered
+        // signal that this is branch should be considered -> set to Some
         valuation_cache[curr_choice_set_node_ptr.to_index()].1 = Some(0 /* no distance */);
         return;
     }
