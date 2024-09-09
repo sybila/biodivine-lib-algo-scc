@@ -32,7 +32,7 @@ pub fn naive_fwd(graph: &SymbolicAsyncGraph, pivot: &GraphColoredVertices) -> Gr
     debug!(
         target: "reach-bwd-naive",
         "Forward reachability finished with {} state(s).",
-        pivot.exact_cardinality()
+        result.exact_cardinality()
     );
 
     result
@@ -69,7 +69,7 @@ pub fn naive_bwd(graph: &SymbolicAsyncGraph, pivot: &GraphColoredVertices) -> Gr
     debug!(
         target: "reach-bwd-naive",
         "Backward reachability finished with {} state(s).",
-        pivot.exact_cardinality()
+        result.exact_cardinality()
     );
 
     result

@@ -4,6 +4,7 @@ pub mod chain;
 pub mod fwd_bwd;
 mod hamming;
 mod reachability;
+mod trimming;
 
 /// Assert that the given graph has no colors.
 fn precondition_graph_not_colored(graph: &SymbolicAsyncGraph) {
