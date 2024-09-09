@@ -3,6 +3,7 @@ use biodivine_lib_param_bn::{
     symbolic_async_graph::{GraphColoredVertices, SymbolicAsyncGraph},
 };
 
+use crate::reachability::{bwd_saturation, fwd_saturation};
 use crate::{hamming::Hamming, precondition_graph_not_colored};
 
 /// does the decomposition of the graph to SCCs
@@ -102,54 +103,6 @@ pub fn chain_saturation(graph: &SymbolicAsyncGraph) -> impl Iterator<Item = Grap
         chain_rec_saturation(graph, graph.empty_colored_vertices(), &mut scc_dump);
     }
     scc_dump.into_iter()
-}
-
-fn fwd_saturation(
-    graph: &SymbolicAsyncGraph,
-    initial: &GraphColoredVertices,
-) -> GraphColoredVertices {
-    let mut result_accumulator = initial.clone();
-
-    // todo likely better perf, right?
-    let rev_variables = graph.variables().rev().collect::<Vec<_>>();
-
-    'from_bottom_var: loop {
-        for var in rev_variables.iter() {
-            let step = graph.var_post_out(*var, &result_accumulator);
-
-            if !step.is_empty() {
-                result_accumulator = result_accumulator.union(&step);
-
-                continue 'from_bottom_var;
-            }
-        }
-
-        break result_accumulator;
-    }
-}
-
-fn bwd_saturation(
-    graph: &SymbolicAsyncGraph,
-    initial: &GraphColoredVertices,
-) -> GraphColoredVertices {
-    let mut result_accumulator = initial.clone();
-
-    // todo likely better perf, right?
-    let rev_variables = graph.variables().rev().collect::<Vec<_>>();
-
-    'from_bottom_var: loop {
-        for var in rev_variables.iter() {
-            let step = graph.var_pre_out(*var, &result_accumulator);
-
-            if !step.is_empty() {
-                result_accumulator = result_accumulator.union(&step);
-
-                continue 'from_bottom_var;
-            }
-        }
-
-        break result_accumulator;
-    }
 }
 
 fn chain_rec_saturation(
@@ -263,7 +216,7 @@ mod tests {
 
     use crate::{
         chain::{chain, chain_saturation, chain_saturation_hamming_heuristic},
-        fwd_bwd::fwd_bwd_scc_decomposition,
+        fwd_bwd::fwd_bwd_scc_decomposition_naive,
     };
 
     fn basic_async_graph() -> SymbolicAsyncGraph {
@@ -356,7 +309,7 @@ mod tests {
         let async_graph = basic_async_graph();
 
         let chain_scc_set = chain(&async_graph).collect::<HashSet<_>>();
-        let fwd_bwd_scc_set = fwd_bwd_scc_decomposition(&async_graph).collect::<HashSet<_>>();
+        let fwd_bwd_scc_set = fwd_bwd_scc_decomposition_naive(&async_graph).collect::<HashSet<_>>();
 
         assert_eq!(chain_scc_set, fwd_bwd_scc_set);
     }
@@ -399,7 +352,7 @@ mod tests {
         );
 
         println!(" >> Computing FWD-BWD.");
-        let fwd_bwd_scc_set = fwd_bwd_scc_decomposition(&graph).collect::<HashSet<_>>();
+        let fwd_bwd_scc_set = fwd_bwd_scc_decomposition_naive(&graph).collect::<HashSet<_>>();
 
         println!(" >> Computing with {}.", std::any::type_name::<F>());
         let chain_scc_set = decomposition_fn(&graph).collect::<HashSet<_>>();

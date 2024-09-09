@@ -12,7 +12,8 @@ fn main() {
 
     println!("Loaded BN with {} variables.", bn.num_vars());
 
-    let mut scc_list = cejn::fwd_bwd::fwd_bwd_scc_decomposition_naive(&graph).collect::<Vec<_>>();
+    let mut scc_list =
+        cejn::fwd_bwd::fwd_bwd_scc_decomposition_saturation(&graph).collect::<Vec<_>>();
     scc_list.sort_by_key(|it| it.exact_cardinality());
 
     let trivial = scc_list.iter().filter(|it| it.is_singleton()).count();

@@ -1,28 +1,48 @@
 //! used just for integration tests - to compare the output of chain on large (non-manual) datasets
 
 use crate::precondition_graph_not_colored;
+use crate::reachability::{bwd_saturation, fwd_saturation, naive_bwd, naive_fwd};
 use biodivine_lib_param_bn::{
     biodivine_std::traits::Set,
     symbolic_async_graph::{GraphColoredVertices, SymbolicAsyncGraph},
 };
+use log::debug;
 
-pub fn fwd_bwd_scc_decomposition(
+pub fn fwd_bwd_scc_decomposition_naive(
     graph: &SymbolicAsyncGraph,
 ) -> impl Iterator<Item = GraphColoredVertices> {
     precondition_graph_not_colored(graph);
 
     let mut scc_dump = Vec::new();
     let mut remaining_space = graph.mk_unit_colored_vertices();
+
+    debug!(target: "fwd-bwd", "Start SCC decomposition with {} state(s).", remaining_space.exact_cardinality());
+
     while !remaining_space.is_empty() {
-        let scc = get_some_scc(graph, &remaining_space);
+        let scc = get_some_scc_naive(graph, &remaining_space);
+
         remaining_space = remaining_space.minus(&scc);
+
+        debug!(
+            target: "fwd-bwd",
+            "Found SCC with {} state(s). Remaining: {}.",
+            scc.exact_cardinality(),
+            remaining_space.exact_cardinality()
+        );
+
         scc_dump.push(scc);
     }
+
+    debug!(
+        target: "fwd-bwd",
+        "Finished with {} SCCs.",
+        scc_dump.len()
+    );
 
     scc_dump.into_iter()
 }
 
-fn get_some_scc(
+fn get_some_scc_naive(
     graph: &SymbolicAsyncGraph,
     space_to_pick_from: &GraphColoredVertices,
 ) -> GraphColoredVertices {
@@ -30,47 +50,72 @@ fn get_some_scc(
 
     let pivot = space_to_pick_from.pick_singleton();
 
-    // let fwd = graph.reach_forward(&pivot);
-    // let bwd = graph.reach_backward(&pivot);
-
     let fwd = naive_fwd(graph, &pivot);
     let bwd = naive_bwd(graph, &pivot);
+
+    debug!(
+        target: "fwd-bwd",
+        "Forward set has {} and backward set has {} state(s).",
+        fwd.exact_cardinality(),
+        bwd.exact_cardinality(),
+    );
 
     fwd.intersect(&bwd)
 }
 
-// SymbolicAsyncGraph::reach_forward optimized; use this naive approach for better comparison
-fn naive_fwd(graph: &SymbolicAsyncGraph, pivot: &GraphColoredVertices) -> GraphColoredVertices {
-    let mut result = pivot.clone();
-    let mut curr_layer = pivot.clone();
+// This seems to be a lot of code duplication, but for now I am ok with it in case the
+// two algorithms diverge in the future.
+pub fn fwd_bwd_scc_decomposition_saturation(
+    graph: &SymbolicAsyncGraph,
+) -> impl Iterator<Item = GraphColoredVertices> {
+    precondition_graph_not_colored(graph);
 
-    loop {
-        let next_layer = graph.post(&curr_layer).minus(&result);
-        if next_layer.is_empty() {
-            break;
-        }
+    let mut scc_dump = Vec::new();
+    let mut remaining_space = graph.mk_unit_colored_vertices();
 
-        result = result.union(&next_layer);
-        curr_layer = next_layer;
+    debug!(target: "fwd-bwd-saturation", "Start SCC decomposition with {} state(s).", remaining_space.exact_cardinality());
+
+    while !remaining_space.is_empty() {
+        let scc = get_some_scc_saturation(graph, &remaining_space);
+
+        remaining_space = remaining_space.minus(&scc);
+
+        debug!(
+            target: "fwd-bwd-saturation",
+            "Found SCC with {} state(s). Remaining: {}.",
+            scc.exact_cardinality(),
+            remaining_space.exact_cardinality()
+        );
+
+        scc_dump.push(scc);
     }
 
-    result
+    debug!(
+        target: "fwd-bwd-saturation",
+        "Finished with {} SCCs.",
+        scc_dump.len()
+    );
+
+    scc_dump.into_iter()
 }
 
-// SymbolicAsyncGraph::reach_backward optimized; use this naive approach for better comparison
-fn naive_bwd(graph: &SymbolicAsyncGraph, pivot: &GraphColoredVertices) -> GraphColoredVertices {
-    let mut result = pivot.clone();
-    let mut curr_layer = pivot.clone();
+fn get_some_scc_saturation(
+    graph: &SymbolicAsyncGraph,
+    space_to_pick_from: &GraphColoredVertices,
+) -> GraphColoredVertices {
+    assert!(!space_to_pick_from.is_empty());
 
-    loop {
-        let next_layer = graph.pre(&curr_layer).minus(&result);
-        if next_layer.is_empty() {
-            break;
-        }
+    let pivot = space_to_pick_from.pick_singleton();
 
-        result = result.union(&next_layer);
-        curr_layer = next_layer;
-    }
+    let fwd = fwd_saturation(graph, &pivot);
+    let bwd = bwd_saturation(graph, &pivot);
 
-    result
+    debug!(
+        target: "fwd-bwd-saturation",
+        "Forward set has {} and backward set has {} state(s).",
+        fwd.exact_cardinality(),
+        bwd.exact_cardinality(),
+    );
+
+    fwd.intersect(&bwd)
 }

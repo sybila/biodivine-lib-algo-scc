@@ -2,6 +2,8 @@ use biodivine_lib_param_bn::symbolic_async_graph::SymbolicAsyncGraph;
 use biodivine_lib_param_bn::BooleanNetwork;
 
 fn main() {
+    env_logger::init();
+
     let args = std::env::args().collect::<Vec<_>>();
     assert_eq!(args.len(), 2);
 
