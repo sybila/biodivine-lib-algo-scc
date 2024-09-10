@@ -163,7 +163,6 @@ pub fn all_trap_spaces(
     }
 
     let trap_spaces = FixedPoints::symbolic_merge(bdd_ctx, to_merge, HashSet::default());
-    
 
     NetworkColoredSpaces::new(trap_spaces, ctx)
 }
