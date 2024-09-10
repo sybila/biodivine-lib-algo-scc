@@ -19,7 +19,7 @@ pub fn trap_separated_components(
     let all_spaces = ctx.mk_unit_colored_spaces(graph);
 
     let rev_bn = network_time_reversal(bn);
-    let rev_graph = SymbolicAsyncGraph::with_space_context(&rev_bn, &ctx).unwrap();
+    let rev_graph = SymbolicAsyncGraph::with_space_context(&rev_bn, ctx).unwrap();
 
     let all_traps = all_trap_spaces(ctx, graph, &all_spaces);
     let all_traps_count = all_traps.exact_cardinality();
@@ -32,9 +32,9 @@ pub fn trap_separated_components(
         let trap_space_bdd = ctx.mk_space(&trap_space);
 
         let subspaces_bdd = ctx.mk_sub_spaces(&trap_space_bdd);
-        let subspaces = NetworkSpaces::new(subspaces_bdd, &ctx);
+        let subspaces = NetworkSpaces::new(subspaces_bdd, ctx);
         let subspaces = &all_spaces.intersect_spaces(&subspaces);
-        let rev_traps = all_trap_spaces(&ctx, &rev_graph, &subspaces);
+        let rev_traps = all_trap_spaces(ctx, &rev_graph, subspaces);
         let rev_trap_count = rev_traps.exact_cardinality();
 
         if !rev_traps.is_empty() {
@@ -163,7 +163,7 @@ pub fn all_trap_spaces(
     }
 
     let trap_spaces = FixedPoints::symbolic_merge(bdd_ctx, to_merge, HashSet::default());
-    let trap_spaces = NetworkColoredSpaces::new(trap_spaces, ctx);
+    
 
-    trap_spaces
+    NetworkColoredSpaces::new(trap_spaces, ctx)
 }
