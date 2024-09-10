@@ -3,7 +3,8 @@ use biodivine_lib_param_bn::symbolic_async_graph::SymbolicAsyncGraph;
 pub mod chain;
 pub mod fwd_bwd;
 mod hamming;
-mod reachability;
+pub mod reachability;
+pub mod trap_spaces;
 mod trimming;
 
 /// Assert that the given graph has no colors.
