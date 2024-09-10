@@ -11,6 +11,11 @@ pub fn trim_fwd_naive(
     graph: &SymbolicAsyncGraph,
     set: &GraphColoredVertices,
 ) -> GraphColoredVertices {
+    if set.is_empty() {
+        debug!(target: "trim-fwd-naive", "Nothing to trim. Empty set.");
+        return set.clone();
+    }
+
     debug!(
         target: "trim-fwd-naive",
         "Start naive forward trimming of {} state(s).",
@@ -26,7 +31,7 @@ pub fn trim_fwd_naive(
             debug!(
                 target: "trim-fwd-naive",
                 "Trimming ended with {} state(s).",
-                set.exact_cardinality()
+                result.exact_cardinality()
             );
 
             return result;
@@ -47,6 +52,11 @@ pub fn trim_bwd_naive(
     graph: &SymbolicAsyncGraph,
     set: &GraphColoredVertices,
 ) -> GraphColoredVertices {
+    if set.is_empty() {
+        debug!(target: "trim-bwd-naive", "Nothing to trim. Empty set.");
+        return set.clone();
+    }
+
     debug!(
         target: "trim-bwd-naive",
         "Start naive backward trimming of {} state(s).",
@@ -62,7 +72,7 @@ pub fn trim_bwd_naive(
             debug!(
                 target: "trim-bwd-naive",
                 "Trimming ended with {} state(s).",
-                set.exact_cardinality()
+                result.exact_cardinality()
             );
 
             return result;
