@@ -1,4 +1,5 @@
 use crate::chain::chain_saturation_trim;
+use crate::trimming::{trim_bwd_naive, trim_fwd_naive};
 use biodivine_lib_param_bn::biodivine_std::traits::Set;
 use biodivine_lib_param_bn::fixed_points::FixedPoints;
 use biodivine_lib_param_bn::symbolic_async_graph::{GraphColoredVertices, SymbolicAsyncGraph};
@@ -27,6 +28,11 @@ pub fn trap_separated_components(
     debug!(target: "trap-scc", "Found {} normal trap spaces.", all_traps_count);
 
     let mut remaining = graph.mk_unit_colored_vertices();
+    remaining = trim_bwd_naive(graph, &remaining);
+    remaining = trim_fwd_naive(graph, &remaining);
+
+    debug!(target: "trap-scc", "Initial graph trimming produced {} state(s).", remaining.exact_cardinality());
+
     let mut results = Vec::new();
     for (i, trap_space) in all_traps.spaces().iter().enumerate() {
         let trap_space_bdd = ctx.mk_space(&trap_space);
