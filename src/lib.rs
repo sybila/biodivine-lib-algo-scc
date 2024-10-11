@@ -6,6 +6,7 @@ mod hamming;
 pub mod reachability;
 pub mod trap_spaces;
 mod trimming;
+mod succession_diagrams;
 
 /// Assert that the given graph has no colors.
 fn precondition_graph_not_colored(graph: &SymbolicAsyncGraph) {
