@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// One "node" of a succession diagram: a trap space of that node,
 /// plus the stable motifs that percolate to node successors.
@@ -37,9 +37,8 @@ mod tests {
                  "motifs": []}
             ]
         "#;
-        
+
         let data: Vec<SdEntry> = serde_json::from_str(raw_data).unwrap();
         assert_eq!(data.len(), 7);
     }
-    
 }
