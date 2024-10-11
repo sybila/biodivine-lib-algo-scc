@@ -1,6 +1,7 @@
+use biodivine_lib_param_bn::fixed_points::FixedPoints;
 use biodivine_lib_param_bn::symbolic_async_graph::SymbolicAsyncGraph;
 use biodivine_lib_param_bn::BooleanNetwork;
-use cejn::transients::is_universally_transient;
+use cejn::transients::{is_long_lived, is_trapped};
 
 fn main() {
     env_logger::init();
@@ -19,8 +20,18 @@ fn main() {
 
     let long_lived = scc_list
         .iter()
-        .filter(|it| !is_universally_transient(&graph, it))
+        .filter(|it| is_long_lived(&graph, it))
         .count();
-    println!("all_non_trivial_scc, long_lived_scc");
-    println!("{}, {}", scc_list.len(), long_lived);
+    let attractors = scc_list.iter().filter(|it| is_trapped(&graph, it)).count();
+
+    let fixed_points = FixedPoints::symbolic(&graph, graph.unit_colored_vertices());
+
+    println!("all_non_trivial_scc, long_lived_scc, complex_attractors, fixed_points");
+    println!(
+        "{}, {}, {}, {}",
+        scc_list.len(),
+        long_lived,
+        attractors,
+        fixed_points.exact_cardinality()
+    );
 }

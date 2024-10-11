@@ -20,3 +20,21 @@ pub fn is_universally_transient(graph: &SymbolicAsyncGraph, set: &GraphColoredVe
     }
     false
 }
+
+/// Returns `true` if the `set` is *long-lived*, the opposite of *universally transient*.
+/// See also [is_universally_transient].
+pub fn is_long_lived(graph: &SymbolicAsyncGraph, set: &GraphColoredVertices) -> bool {
+    !is_universally_transient(graph, set)
+}
+
+/// Returns `true` if the `set` is *trapped*, i.e. it cannot be escaped by a transition
+/// within the given `graph`.
+pub fn is_trapped(graph: &SymbolicAsyncGraph, set: &GraphColoredVertices) -> bool {
+    for var in graph.variables() {
+        let can_go_out = graph.var_can_post_out(var, set);
+        if !can_go_out.is_empty() {
+            return false;
+        }
+    }
+    true
+}
