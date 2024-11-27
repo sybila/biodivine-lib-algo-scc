@@ -1,5 +1,8 @@
 use biodivine_lib_param_bn::biodivine_std::traits::Set;
-use biodivine_lib_param_bn::symbolic_async_graph::{GraphColoredVertices, SymbolicAsyncGraph};
+use biodivine_lib_param_bn::symbolic_async_graph::{
+    GraphColoredVertices, GraphVertices, SymbolicAsyncGraph,
+};
+use biodivine_lib_param_bn::{ExtendedBoolean, Space};
 
 /// Returns `true` if there exists a variable `v` such that all vertices in the `set` can leave
 /// the `set` by updating variable `v`.
@@ -33,6 +36,36 @@ pub fn is_trapped(graph: &SymbolicAsyncGraph, set: &GraphColoredVertices) -> boo
     for var in graph.variables() {
         let can_go_out = graph.var_can_post_out(var, set);
         if !can_go_out.is_empty() {
+            return false;
+        }
+    }
+    true
+}
+
+/// Returns the smallest enclosing subspace, as long as the set is not empty.
+pub fn enclosing_subspace(graph: &SymbolicAsyncGraph, set: &GraphVertices) -> Space {
+    let ctx = graph.symbolic_context();
+    let mut space = Space::new_raw(ctx.num_state_variables());
+    for var in ctx.network_variables() {
+        let bdd_var = ctx.get_state_variable(var);
+        let true_subset = set.as_bdd().var_select(bdd_var, true);
+        let false_subset = set.as_bdd().var_select(bdd_var, false);
+        assert!(!true_subset.is_false() || !false_subset.is_false());
+        match (true_subset.is_false(), false_subset.is_false()) {
+            (true, true) => unreachable!("The set is empty!"),
+            (false, false) => space[var] = ExtendedBoolean::Any,
+            (false, true) => space[var] = ExtendedBoolean::One,
+            (true, false) => space[var] = ExtendedBoolean::Zero,
+        }
+    }
+    space
+}
+
+/// Returns true if `a` is a subspace of `b`, meaning every value that is fixed in `b` is fixed
+/// to the same value in `a`.
+pub fn is_subspace(a: &Space, b: &Space) -> bool {
+    for (var, value) in b.to_values() {
+        if a[var] != ExtendedBoolean::from(value) {
             return false;
         }
     }
