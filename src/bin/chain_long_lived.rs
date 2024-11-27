@@ -17,7 +17,7 @@ fn main() {
 
     println!("Loaded BN with {} variables.", bn.num_vars());
 
-    let mut scc_list = cejn::chain::chain_saturation_trim(&graph).collect::<Vec<_>>();
+    let mut scc_list = cejn::chain::chain_saturation_trim_long_lived(&graph).collect::<Vec<_>>();
     scc_list.sort_by_key(|it| it.exact_cardinality());
 
     let fixed_points = FixedPoints::symbolic(&graph, graph.unit_colored_vertices());

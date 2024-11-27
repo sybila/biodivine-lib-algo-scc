@@ -1,4 +1,5 @@
 use crate::reachability::{bwd_saturation, fwd_saturation};
+use crate::transients::is_universally_transient;
 use crate::trimming::{trim_bwd_naive, trim_fwd_naive};
 use crate::{hamming::Hamming, precondition_graph_not_colored};
 use biodivine_lib_param_bn::{
@@ -253,6 +254,104 @@ pub fn chain_saturation_trim(
     if !universe.is_empty() {
         let mut remaining = vec![(universe, graph.mk_empty_colored_vertices())];
         while let Some((vertices, hint)) = remaining.pop() {
+            let r_graph = graph.restrict(&vertices);
+
+            debug!(
+                target: "chain-saturation-trim",
+                "Start chain-saturation-trim in sub-graph with {} state(s).",
+                vertices.exact_cardinality(),
+            );
+
+            let pivot_set = match hint.is_empty() {
+                true => r_graph.mk_unit_colored_vertices(),
+                false => hint,
+            };
+            let pivot = pivot_set.pick_singleton();
+
+            assert!(!pivot.is_empty());
+
+            let fwd_reachable = fwd_saturation(&r_graph, &pivot);
+
+            let scc = bwd_saturation(&r_graph.restrict(&fwd_reachable), &pivot);
+
+            // Output the scc.
+            if !scc.is_singleton() {
+                scc_dump.push(scc.clone());
+            }
+
+            let fwd_remaining = fwd_reachable.minus(&scc);
+            let fwd_remaining = trim_bwd_naive(&r_graph, &fwd_remaining);
+            let fwd_remaining = trim_fwd_naive(&r_graph, &fwd_remaining);
+            let rest_remaining = r_graph.unit_colored_vertices().minus(&fwd_reachable);
+            let rest_remaining = trim_bwd_naive(&r_graph, &rest_remaining);
+            let rest_remaining = trim_fwd_naive(&r_graph, &rest_remaining);
+
+            if !fwd_remaining.is_empty() {
+                let fwd_hint = fwd_remaining.clone();
+                remaining.push((fwd_remaining, fwd_hint));
+            }
+
+            if !rest_remaining.is_empty() {
+                let rest_hint = r_graph.pre(&scc).intersect(&rest_remaining);
+                remaining.push((rest_remaining, rest_hint));
+            }
+
+            debug!(
+                target: "chain-saturation-trim",
+                "Found SCC with {} state(s). Remaining states: {} in {} sets. SCCs so far: {}",
+                scc.exact_cardinality(),
+                remaining.iter().map(|(a, _)| a.exact_cardinality()).sum::<BigInt>(),
+                remaining.len(),
+                scc_dump.len(),
+            );
+        }
+    }
+
+    debug!(
+        target: "chain-saturation-trim",
+        "Finished SCC decomposition with {} SCCs.",
+        scc_dump.len()
+    );
+
+    scc_dump.into_iter()
+}
+
+// Version of chain_saturation_trim that automatically discards any parts of the state space
+// where long-lived components cannot be found.
+pub fn chain_saturation_trim_long_lived(
+    graph: &SymbolicAsyncGraph,
+) -> impl Iterator<Item = GraphColoredVertices> {
+    precondition_graph_not_colored(graph);
+
+    debug!(
+        target: "chain-saturation-trim",
+        "Start chain-saturation-trim SCC decomposition with {} state(s).",
+        graph.unit_colored_vertices().exact_cardinality()
+    );
+
+    let universe = graph.mk_unit_colored_vertices();
+    let universe = trim_bwd_naive(graph, &universe);
+    let universe = trim_fwd_naive(graph, &universe);
+
+    debug!(
+        target: "chain-saturation-trim",
+        "State space after initial trimming: {}.",
+        universe.exact_cardinality(),
+    );
+
+    let mut scc_dump = Vec::new();
+
+    if !universe.is_empty() {
+        let mut remaining = vec![(universe, graph.mk_empty_colored_vertices())];
+        while let Some((vertices, hint)) = remaining.pop() {
+            if is_universally_transient(graph, &vertices) {
+                debug!(
+                    target: "chain-saturation-trim",
+                    "Rejected sub-graph with {} state(s) as universally transient.",
+                    vertices.exact_cardinality(),
+                );
+                continue;
+            }
             let r_graph = graph.restrict(&vertices);
 
             debug!(
