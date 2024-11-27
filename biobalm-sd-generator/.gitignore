@@ -1,3 +1,8 @@
 venv
 bbm-inputs-random-128
 bbm-random-inlined
+bbm-random-inlined-delay
+
+# Succession diagrams are too large to commit.
+bbm-random-inlined-with-sd
+bbm-random-inlined-with-sd.zip
