@@ -3,25 +3,35 @@ use biodivine_lib_param_bn::{
     symbolic_async_graph::{GraphColoredVertices, SymbolicAsyncGraph},
 };
 
-use crate::{hamming::Hamming, precondition_graph_not_colored};
+use crate::{assert_precondition_graph_not_colored, hamming::Hamming};
 
 /// does the decomposition of the graph to SCCs
 /// should be made iterative sometime in the future
 /// should also be remade not to return `Vec`
 /// also the "metadata" about the graph would be needlessly duplicated this way
 /// also colored version wanted (as another method)
+///
+/// The order of the output sccs is undefined.
 pub fn chain(graph: &SymbolicAsyncGraph) -> impl Iterator<Item = GraphColoredVertices> {
-    precondition_graph_not_colored(graph);
+    assert_precondition_graph_not_colored(graph);
 
     let mut scc_dump = Vec::new();
-    if !graph.unit_vertices().is_empty() {
-        chain_rec(graph, graph.empty_colored_vertices(), &mut scc_dump);
+    // `chain_rec` assumes it can pick a pivot -> must not pass in an empty graph
+    match graph.unit_vertices().is_empty() {
+        true => { /* no sccs in an empty graph */ }
+        false => chain_rec(
+            graph,
+            graph.empty_colored_vertices(), // no hint
+            &mut scc_dump,
+        ),
     }
     scc_dump.into_iter()
 }
 
 /// recursive version of the chain decomposition
 /// expects all the args to be of the same graph (given by the first parameter)
+///
+/// expects a nonempty graph (must be able to pick a pivot)
 ///
 /// only works on a graph with a single color (aka no colors)
 ///
@@ -35,7 +45,9 @@ fn chain_rec(
     vertices_hint: &GraphColoredVertices,
     scc_dump: &mut Vec<GraphColoredVertices>,
 ) {
+    // todo consider using `debug_assert! everywhere` (test performance gain)
     assert!(!graph.unit_vertices().is_empty());
+    assert!(vertices_hint.is_subset(graph.unit_colored_vertices()));
 
     let pivot_set = match vertices_hint.is_empty() {
         true => graph.unit_colored_vertices(),
@@ -77,6 +89,7 @@ fn chain_rec(
     let the_scc = restricted_bwd_reachable_acc;
 
     // Output the scc.
+    // todo perf move to the end of this fn to avoid clone (mind the inversed order)
     scc_dump.push(the_scc.clone());
 
     let fwd_remaining = fwd_reachable.minus(&the_scc);
@@ -94,12 +107,23 @@ fn chain_rec(
     }
 }
 
+/// Does the decomposition of the graph to SCCs,
+/// but using the *saturation* strategy to perform the forward and backward
+/// reachability.
+///
+/// The order of the output sccs is undefined.
 pub fn chain_saturation(graph: &SymbolicAsyncGraph) -> impl Iterator<Item = GraphColoredVertices> {
-    precondition_graph_not_colored(graph);
+    assert_precondition_graph_not_colored(graph);
 
     let mut scc_dump = Vec::new();
-    if !graph.unit_vertices().is_empty() {
-        chain_rec_saturation(graph, graph.empty_colored_vertices(), &mut scc_dump);
+    // `chain_rec` assumes it can pick a pivot -> must not pass in an empty graph
+    match graph.unit_vertices().is_empty() {
+        true => { /* no sccs in an empty graph */ }
+        false => chain_rec_saturation(
+            graph,
+            graph.empty_colored_vertices(), // no hint
+            &mut scc_dump,
+        ),
     }
     scc_dump.into_iter()
 }
@@ -111,6 +135,7 @@ fn fwd_saturation(
     let mut result_accumulator = initial.clone();
 
     // todo likely better perf, right?
+    // todo do not collect
     let rev_variables = graph.variables().rev().collect::<Vec<_>>();
 
     'from_bottom_var: loop {
@@ -135,6 +160,7 @@ fn bwd_saturation(
     let mut result_accumulator = initial.clone();
 
     // todo likely better perf, right?
+    // todo do not collect
     let rev_variables = graph.variables().rev().collect::<Vec<_>>();
 
     'from_bottom_var: loop {
@@ -172,6 +198,7 @@ fn chain_rec_saturation(
     let scc = bwd_saturation(&graph.restrict(&fwd_reachable), &pivot);
 
     // Output the scc.
+    // todo move to the end to avoid clone - beware of the change in the order
     scc_dump.push(scc.clone());
 
     let fwd_remaining = fwd_reachable.minus(&scc);
@@ -194,21 +221,31 @@ fn chain_rec_saturation(
     }
 }
 
+/// Does the decomposition of the graph to SCCs,
+/// but using the *saturation* strategy to perform the forward and backward
+/// reachability *and* the hamming heuristic for picking the pivot.
+///
+/// The order of the output sccs is undefined.
 pub fn chain_saturation_hamming_heuristic(
     graph: &SymbolicAsyncGraph,
 ) -> impl Iterator<Item = GraphColoredVertices> {
-    precondition_graph_not_colored(graph);
+    assert_precondition_graph_not_colored(graph);
 
     let mut scc_dump = Vec::new();
-    if !graph.unit_vertices().is_empty() {
-        chain_rec_saturation_hamming_heuristic(
+    match graph.unit_vertices().is_empty() {
+        true => { /* no sccs in an empty graph */ }
+        false => chain_rec_saturation_hamming_heuristic(
             graph,
-            graph.empty_colored_vertices(),
+            graph.empty_colored_vertices(), // no hint
             &mut scc_dump,
-        );
+        ),
     }
     scc_dump.into_iter()
 }
+
+// todo consider adding `chain_hamming_heuristic`? - to have the full
+// `{with_saturation, without_saturation} x {with_hamming, without_hamming}`
+// options?
 
 fn chain_rec_saturation_hamming_heuristic(
     graph: &SymbolicAsyncGraph,
@@ -230,6 +267,7 @@ fn chain_rec_saturation_hamming_heuristic(
     let scc = bwd_saturation(&graph.restrict(&fwd_reachable), &pivot);
 
     // Output the scc.
+    // todo
     scc_dump.push(scc.clone());
 
     let fwd_remaining = fwd_reachable.minus(&scc);

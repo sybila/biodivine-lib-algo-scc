@@ -5,7 +5,7 @@ pub mod fwd_bwd;
 mod hamming;
 
 /// Assert that the given graph has no colors.
-fn precondition_graph_not_colored(graph: &SymbolicAsyncGraph) {
+fn assert_precondition_graph_not_colored(graph: &SymbolicAsyncGraph) {
     assert_eq!(
         graph.symbolic_context().num_parameter_variables(),
         0,

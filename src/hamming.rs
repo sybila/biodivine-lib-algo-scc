@@ -102,6 +102,8 @@ enum ChosenChild {
 
 /// traverses the choice_set to find the "most distant" valuation possible
 /// does not update the valuation in the root if there are variables missing "above it"
+// todo consider using iterative approach
+// - aka dynamic, bottom-up approach
 fn rec_max_dist_path(
     curr_choice_set_node_ptr: BddPointer,
     choice_set: &Bdd,
@@ -149,6 +151,7 @@ fn rec_max_dist_path(
         (Some((low_child_dist, _)), Some((high_child_dist, _))) => {
             let choose_low_dist_increase =
                 if pivot_singleton_valuation.value(choice_set.var_of(curr_choice_set_node_ptr)) {
+                    // todo one of the comments is wrong - `want *n*eq`; also use matches
                     // notice the absence of negation - want neq
                     1
                 } else {
@@ -230,9 +233,8 @@ fn rec_max_dist_path(
                 Some((this_dist_high, ChosenChild::High));
         }
 
-        (None, None) => {
-            unreachable!()
-        }
+        // todo unreachable because...
+        (None, None) => unreachable!(),
     }
 }
 

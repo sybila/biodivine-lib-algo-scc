@@ -1,6 +1,6 @@
 //! used just for integration tests - to compare the output of chain on large (non-manual) datasets
 
-use crate::precondition_graph_not_colored;
+use crate::assert_precondition_graph_not_colored;
 use biodivine_lib_param_bn::{
     biodivine_std::traits::Set,
     symbolic_async_graph::{GraphColoredVertices, SymbolicAsyncGraph},
@@ -9,7 +9,7 @@ use biodivine_lib_param_bn::{
 pub fn fwd_bwd_scc_decomposition(
     graph: &SymbolicAsyncGraph,
 ) -> impl Iterator<Item = GraphColoredVertices> {
-    precondition_graph_not_colored(graph);
+    assert_precondition_graph_not_colored(graph);
 
     let mut scc_dump = Vec::new();
     let mut remaining_space = graph.mk_unit_colored_vertices();
