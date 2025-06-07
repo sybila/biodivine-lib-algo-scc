@@ -12,6 +12,10 @@ expensive-tests = []
 biodivine-lib-bdd = "0.5.13"
 biodivine-lib-param-bn = "0.5.10"
 num-bigint = "0.4.4"
+log = "0.4.22"
+env_logger = "0.11.5"
+serde_json = "1.0.128"
+serde = { version = "1.0.210", features = ["derive"] }
 
 [dev-dependencies]
 test-generator = "0.3.1"

@@ -1,0 +1,31 @@
+use biodivine_lib_param_bn::symbolic_async_graph::SymbolicAsyncGraph;
+use biodivine_lib_param_bn::trap_spaces::SymbolicSpaceContext;
+use biodivine_lib_param_bn::BooleanNetwork;
+
+fn main() {
+    env_logger::init();
+
+    let args = std::env::args().collect::<Vec<_>>();
+    assert_eq!(args.len(), 2);
+
+    let bn = BooleanNetwork::try_from_file(&args[1]).unwrap();
+    let bn = bn.inline_constants(true, true);
+    let ctx = SymbolicSpaceContext::new(&bn);
+    let graph = SymbolicAsyncGraph::with_space_context(&bn, &ctx).unwrap();
+
+    println!("Loaded BN with {} variables.", bn.num_vars());
+
+    let mut scc_list = cejn::trap_spaces::trap_separated_components(&bn, &ctx, &graph);
+    scc_list.sort_by_key(|it| it.exact_cardinality());
+
+    let trivial = scc_list.iter().filter(|it| it.is_singleton()).count();
+
+    println!("all_scc, trivial_scc, sizes...");
+    print!("{}, {}", scc_list.len(), trivial);
+    for scc in scc_list.iter().rev().take(100) {
+        if !scc.is_singleton() {
+            print!(", {}", scc.exact_cardinality());
+        }
+    }
+    println!();
+}

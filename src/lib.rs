@@ -3,6 +3,11 @@ use biodivine_lib_param_bn::symbolic_async_graph::SymbolicAsyncGraph;
 pub mod chain;
 pub mod fwd_bwd;
 mod hamming;
+pub mod reachability;
+pub mod succession_diagrams;
+pub mod transients;
+pub mod trap_spaces;
+mod trimming;
 
 /// Assert that the given graph has no colors.
 fn precondition_graph_not_colored(graph: &SymbolicAsyncGraph) {

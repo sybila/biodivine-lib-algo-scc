@@ -2,10 +2,13 @@ use biodivine_lib_param_bn::symbolic_async_graph::SymbolicAsyncGraph;
 use biodivine_lib_param_bn::BooleanNetwork;
 
 fn main() {
+    env_logger::init();
+
     let args = std::env::args().collect::<Vec<_>>();
     assert_eq!(args.len(), 2);
 
     let bn = BooleanNetwork::try_from_file(&args[1]).unwrap();
+    let bn = bn.inline_constants(true, true);
     let graph = SymbolicAsyncGraph::new(&bn).unwrap();
 
     println!("Loaded BN with {} variables.", bn.num_vars());

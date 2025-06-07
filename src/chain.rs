@@ -1,9 +1,13 @@
+use crate::reachability::{bwd_saturation, fwd_saturation};
+use crate::transients::is_universally_transient;
+use crate::trimming::{trim_bwd_naive, trim_fwd_naive};
+use crate::{hamming::Hamming, precondition_graph_not_colored};
 use biodivine_lib_param_bn::{
     biodivine_std::traits::Set,
     symbolic_async_graph::{GraphColoredVertices, SymbolicAsyncGraph},
 };
-
-use crate::{hamming::Hamming, precondition_graph_not_colored};
+use log::{debug, trace};
+use num_bigint::BigInt;
 
 /// does the decomposition of the graph to SCCs
 /// should be made iterative sometime in the future
@@ -13,10 +17,23 @@ use crate::{hamming::Hamming, precondition_graph_not_colored};
 pub fn chain(graph: &SymbolicAsyncGraph) -> impl Iterator<Item = GraphColoredVertices> {
     precondition_graph_not_colored(graph);
 
+    debug!(
+        target: "chain",
+        "Start chain SCC decomposition with {} state(s).",
+        graph.unit_colored_vertices().exact_cardinality()
+    );
+
     let mut scc_dump = Vec::new();
     if !graph.unit_vertices().is_empty() {
         chain_rec(graph, graph.empty_colored_vertices(), &mut scc_dump);
     }
+
+    debug!(
+        target: "chain",
+        "Finished SCC decomposition with {} SCCs.",
+        scc_dump.len()
+    );
+
     scc_dump.into_iter()
 }
 
@@ -45,6 +62,8 @@ fn chain_rec(
 
     assert!(!pivot.is_empty()); // trivially true; subgraph is nonempty (else returned above)
 
+    debug!(target: "chain-fwd", "Start forward reachability.");
+
     let mut fwd_reachable_acc = pivot.clone();
     let mut current_layer = pivot.clone();
     loop {
@@ -56,10 +75,21 @@ fn chain_rec(
 
         fwd_reachable_acc = fwd_reachable_acc.union(&next_layer);
         current_layer = next_layer;
+
+        trace!(
+            target: "chain-fwd",
+            "Result increased to {}[bdd_nodes:{}].",
+            fwd_reachable_acc.exact_cardinality(),
+            fwd_reachable_acc.symbolic_size()
+        );
     }
+
+    debug!(target: "chain-fwd", "Forward set has {} state(s).", fwd_reachable_acc.exact_cardinality());
 
     let fwd_reachable = fwd_reachable_acc;
     let last_fwd_layer = current_layer;
+
+    debug!(target: "chain-bwd", "Start backward reachability.");
 
     let mut restricted_bwd_reachable_acc = pivot.clone();
     let graph_fwd_restricted = graph.restrict(&fwd_reachable);
@@ -72,21 +102,41 @@ fn chain_rec(
         }
 
         restricted_bwd_reachable_acc = restricted_bwd_reachable_acc.union(&restricted_pre);
+
+        trace!(
+            target: "chain-bwd",
+            "Result increased to {}[bdd_nodes:{}].",
+            restricted_bwd_reachable_acc.exact_cardinality(),
+            restricted_bwd_reachable_acc.symbolic_size()
+        );
     }
+
+    debug!(target: "chain-bwd", "Backward set has {} state(s).", restricted_bwd_reachable_acc.exact_cardinality());
 
     let the_scc = restricted_bwd_reachable_acc;
 
     // Output the scc.
-    scc_dump.push(the_scc.clone());
+    if !the_scc.is_singleton() {
+        scc_dump.push(the_scc.clone());
+    }
 
     let fwd_remaining = fwd_reachable.minus(&the_scc);
+    let rest_remaining = graph.unit_colored_vertices().minus(&fwd_reachable);
+
+    debug!(
+        target: "fwd-bwd",
+        "Found SCC with {} state(s). Remaining-fwd: {}. Remaining-rest: {}.",
+        the_scc.exact_cardinality(),
+        fwd_remaining.exact_cardinality(),
+        rest_remaining.exact_cardinality(),
+    );
+
     if !fwd_remaining.is_empty() {
         let fwd_subgraph = graph.restrict(&fwd_remaining);
         let fwd_hint = last_fwd_layer.minus(&the_scc);
         chain_rec(&fwd_subgraph, &fwd_hint, scc_dump);
     }
 
-    let rest_remaining = graph.unit_colored_vertices().minus(&fwd_reachable);
     if !rest_remaining.is_empty() {
         let rest_subgraph = graph.restrict(&rest_remaining);
         let rest_hint = graph.pre(&the_scc).intersect(&rest_remaining);
@@ -97,59 +147,24 @@ fn chain_rec(
 pub fn chain_saturation(graph: &SymbolicAsyncGraph) -> impl Iterator<Item = GraphColoredVertices> {
     precondition_graph_not_colored(graph);
 
+    debug!(
+        target: "chain-saturation",
+        "Start chain-saturation SCC decomposition with {} state(s).",
+        graph.unit_colored_vertices().exact_cardinality()
+    );
+
     let mut scc_dump = Vec::new();
     if !graph.unit_vertices().is_empty() {
         chain_rec_saturation(graph, graph.empty_colored_vertices(), &mut scc_dump);
     }
+
+    debug!(
+        target: "chain-saturation",
+        "Finished SCC decomposition with {} SCCs.",
+        scc_dump.len()
+    );
+
     scc_dump.into_iter()
-}
-
-fn fwd_saturation(
-    graph: &SymbolicAsyncGraph,
-    initial: &GraphColoredVertices,
-) -> GraphColoredVertices {
-    let mut result_accumulator = initial.clone();
-
-    // todo likely better perf, right?
-    let rev_variables = graph.variables().rev().collect::<Vec<_>>();
-
-    'from_bottom_var: loop {
-        for var in rev_variables.iter() {
-            let step = graph.var_post_out(*var, &result_accumulator);
-
-            if !step.is_empty() {
-                result_accumulator = result_accumulator.union(&step);
-
-                continue 'from_bottom_var;
-            }
-        }
-
-        break result_accumulator;
-    }
-}
-
-fn bwd_saturation(
-    graph: &SymbolicAsyncGraph,
-    initial: &GraphColoredVertices,
-) -> GraphColoredVertices {
-    let mut result_accumulator = initial.clone();
-
-    // todo likely better perf, right?
-    let rev_variables = graph.variables().rev().collect::<Vec<_>>();
-
-    'from_bottom_var: loop {
-        for var in rev_variables.iter() {
-            let step = graph.var_pre_out(*var, &result_accumulator);
-
-            if !step.is_empty() {
-                result_accumulator = result_accumulator.union(&step);
-
-                continue 'from_bottom_var;
-            }
-        }
-
-        break result_accumulator;
-    }
 }
 
 fn chain_rec_saturation(
@@ -158,6 +173,12 @@ fn chain_rec_saturation(
     scc_dump: &mut Vec<GraphColoredVertices>,
 ) {
     assert!(!graph.unit_vertices().is_empty());
+
+    debug!(
+        target: "chain-saturation",
+        "Start chain-saturation in sub-graph with {} state(s).",
+        graph.unit_colored_vertices().exact_cardinality()
+    );
 
     let pivot_set = match vertices_hint.is_empty() {
         true => graph.unit_colored_vertices(),
@@ -172,9 +193,21 @@ fn chain_rec_saturation(
     let scc = bwd_saturation(&graph.restrict(&fwd_reachable), &pivot);
 
     // Output the scc.
-    scc_dump.push(scc.clone());
+    if !scc.is_singleton() {
+        scc_dump.push(scc.clone());
+    }
 
     let fwd_remaining = fwd_reachable.minus(&scc);
+    let rest_remaining = graph.unit_colored_vertices().minus(&fwd_reachable);
+
+    debug!(
+        target: "chain-saturation",
+        "Found SCC with {} state(s). Remaining-fwd: {}. Remaining-rest: {}.",
+        scc.exact_cardinality(),
+        fwd_remaining.exact_cardinality(),
+        rest_remaining.exact_cardinality(),
+    );
+
     if !fwd_remaining.is_empty() {
         let fwd_subgraph = graph.restrict(&fwd_remaining);
 
@@ -186,7 +219,6 @@ fn chain_rec_saturation(
         chain_rec_saturation(&fwd_subgraph, &fwd_hint, scc_dump);
     }
 
-    let rest_remaining = graph.unit_colored_vertices().minus(&fwd_reachable);
     if !rest_remaining.is_empty() {
         let rest_subgraph = graph.restrict(&rest_remaining);
         let rest_hint = graph.pre(&scc).intersect(&rest_remaining);
@@ -194,10 +226,204 @@ fn chain_rec_saturation(
     }
 }
 
+// Version of chain with trimming, and rewritten to avoid recursion (just in
+// case we need to detect more than ~10.000 SCCs).
+pub fn chain_saturation_trim(
+    graph: &SymbolicAsyncGraph,
+) -> impl Iterator<Item = GraphColoredVertices> {
+    precondition_graph_not_colored(graph);
+
+    debug!(
+        target: "chain-saturation-trim",
+        "Start chain-saturation-trim SCC decomposition with {} state(s).",
+        graph.unit_colored_vertices().exact_cardinality()
+    );
+
+    let universe = graph.mk_unit_colored_vertices();
+    let universe = trim_bwd_naive(graph, &universe);
+    let universe = trim_fwd_naive(graph, &universe);
+
+    debug!(
+        target: "chain-saturation-trim",
+        "State space after initial trimming: {}.",
+        universe.exact_cardinality(),
+    );
+
+    let mut scc_dump = Vec::new();
+
+    if !universe.is_empty() {
+        let mut remaining = vec![(universe, graph.mk_empty_colored_vertices())];
+        while let Some((vertices, hint)) = remaining.pop() {
+            let r_graph = graph.restrict(&vertices);
+
+            debug!(
+                target: "chain-saturation-trim",
+                "Start chain-saturation-trim in sub-graph with {} state(s).",
+                vertices.exact_cardinality(),
+            );
+
+            let pivot_set = match hint.is_empty() {
+                true => r_graph.mk_unit_colored_vertices(),
+                false => hint,
+            };
+            let pivot = pivot_set.pick_singleton();
+
+            assert!(!pivot.is_empty());
+
+            let fwd_reachable = fwd_saturation(&r_graph, &pivot);
+
+            let scc = bwd_saturation(&r_graph.restrict(&fwd_reachable), &pivot);
+
+            // Output the scc.
+            if !scc.is_singleton() {
+                scc_dump.push(scc.clone());
+            }
+
+            let fwd_remaining = fwd_reachable.minus(&scc);
+            let fwd_remaining = trim_bwd_naive(&r_graph, &fwd_remaining);
+            let fwd_remaining = trim_fwd_naive(&r_graph, &fwd_remaining);
+            let rest_remaining = r_graph.unit_colored_vertices().minus(&fwd_reachable);
+            let rest_remaining = trim_bwd_naive(&r_graph, &rest_remaining);
+            let rest_remaining = trim_fwd_naive(&r_graph, &rest_remaining);
+
+            if !fwd_remaining.is_empty() {
+                let fwd_hint = fwd_remaining.clone();
+                remaining.push((fwd_remaining, fwd_hint));
+            }
+
+            if !rest_remaining.is_empty() {
+                let rest_hint = r_graph.pre(&scc).intersect(&rest_remaining);
+                remaining.push((rest_remaining, rest_hint));
+            }
+
+            debug!(
+                target: "chain-saturation-trim",
+                "Found SCC with {} state(s). Remaining states: {} in {} sets. SCCs so far: {}",
+                scc.exact_cardinality(),
+                remaining.iter().map(|(a, _)| a.exact_cardinality()).sum::<BigInt>(),
+                remaining.len(),
+                scc_dump.len(),
+            );
+        }
+    }
+
+    debug!(
+        target: "chain-saturation-trim",
+        "Finished SCC decomposition with {} SCCs.",
+        scc_dump.len()
+    );
+
+    scc_dump.into_iter()
+}
+
+// Version of chain_saturation_trim that automatically discards any parts of the state space
+// where long-lived components cannot be found.
+pub fn chain_saturation_trim_long_lived(
+    graph: &SymbolicAsyncGraph,
+) -> impl Iterator<Item = GraphColoredVertices> {
+    precondition_graph_not_colored(graph);
+
+    debug!(
+        target: "chain-saturation-trim",
+        "Start chain-saturation-trim SCC decomposition with {} state(s).",
+        graph.unit_colored_vertices().exact_cardinality()
+    );
+
+    let universe = graph.mk_unit_colored_vertices();
+    let universe = trim_bwd_naive(graph, &universe);
+    let universe = trim_fwd_naive(graph, &universe);
+
+    debug!(
+        target: "chain-saturation-trim",
+        "State space after initial trimming: {}.",
+        universe.exact_cardinality(),
+    );
+
+    let mut scc_dump = Vec::new();
+
+    if !universe.is_empty() {
+        let mut remaining = vec![(universe, graph.mk_empty_colored_vertices())];
+        while let Some((vertices, hint)) = remaining.pop() {
+            if is_universally_transient(graph, &vertices) {
+                debug!(
+                    target: "chain-saturation-trim",
+                    "Rejected sub-graph with {} state(s) as universally transient.",
+                    vertices.exact_cardinality(),
+                );
+                continue;
+            }
+            let r_graph = graph.restrict(&vertices);
+
+            debug!(
+                target: "chain-saturation-trim",
+                "Start chain-saturation-trim in sub-graph with {} state(s).",
+                vertices.exact_cardinality(),
+            );
+
+            let pivot_set = match hint.is_empty() {
+                true => r_graph.mk_unit_colored_vertices(),
+                false => hint,
+            };
+            let pivot = pivot_set.pick_singleton();
+
+            assert!(!pivot.is_empty());
+
+            let fwd_reachable = fwd_saturation(&r_graph, &pivot);
+
+            let scc = bwd_saturation(&r_graph.restrict(&fwd_reachable), &pivot);
+
+            // Output the scc.
+            if !scc.is_singleton() {
+                scc_dump.push(scc.clone());
+            }
+
+            let fwd_remaining = fwd_reachable.minus(&scc);
+            let fwd_remaining = trim_bwd_naive(&r_graph, &fwd_remaining);
+            let fwd_remaining = trim_fwd_naive(&r_graph, &fwd_remaining);
+            let rest_remaining = r_graph.unit_colored_vertices().minus(&fwd_reachable);
+            let rest_remaining = trim_bwd_naive(&r_graph, &rest_remaining);
+            let rest_remaining = trim_fwd_naive(&r_graph, &rest_remaining);
+
+            if !fwd_remaining.is_empty() {
+                let fwd_hint = fwd_remaining.clone();
+                remaining.push((fwd_remaining, fwd_hint));
+            }
+
+            if !rest_remaining.is_empty() {
+                let rest_hint = r_graph.pre(&scc).intersect(&rest_remaining);
+                remaining.push((rest_remaining, rest_hint));
+            }
+
+            debug!(
+                target: "chain-saturation-trim",
+                "Found SCC with {} state(s). Remaining states: {} in {} sets. SCCs so far: {}",
+                scc.exact_cardinality(),
+                remaining.iter().map(|(a, _)| a.exact_cardinality()).sum::<BigInt>(),
+                remaining.len(),
+                scc_dump.len(),
+            );
+        }
+    }
+
+    debug!(
+        target: "chain-saturation-trim",
+        "Finished SCC decomposition with {} SCCs.",
+        scc_dump.len()
+    );
+
+    scc_dump.into_iter()
+}
+
 pub fn chain_saturation_hamming_heuristic(
     graph: &SymbolicAsyncGraph,
 ) -> impl Iterator<Item = GraphColoredVertices> {
     precondition_graph_not_colored(graph);
+
+    debug!(
+        target: "chain-saturation-hamming",
+        "Start chain-saturation-hamming SCC decomposition with {} state(s).",
+        graph.unit_colored_vertices().exact_cardinality()
+    );
 
     let mut scc_dump = Vec::new();
     if !graph.unit_vertices().is_empty() {
@@ -207,6 +433,13 @@ pub fn chain_saturation_hamming_heuristic(
             &mut scc_dump,
         );
     }
+
+    debug!(
+        target: "chain-saturation-hamming",
+        "Finished SCC decomposition with {} SCCs.",
+        scc_dump.len()
+    );
+
     scc_dump.into_iter()
 }
 
@@ -216,6 +449,12 @@ fn chain_rec_saturation_hamming_heuristic(
     scc_dump: &mut Vec<GraphColoredVertices>,
 ) {
     assert!(!graph.unit_vertices().is_empty());
+
+    debug!(
+        target: "chain-saturation-hamming",
+        "Start chain-saturation in sub-graph with {} state(s).",
+        graph.unit_colored_vertices().exact_cardinality()
+    );
 
     let pivot_set = match vertices_hint.is_empty() {
         true => graph.unit_colored_vertices(),
@@ -230,23 +469,122 @@ fn chain_rec_saturation_hamming_heuristic(
     let scc = bwd_saturation(&graph.restrict(&fwd_reachable), &pivot);
 
     // Output the scc.
-    scc_dump.push(scc.clone());
+    if !scc.is_singleton() {
+        scc_dump.push(scc.clone());
+    }
 
     let fwd_remaining = fwd_reachable.minus(&scc);
+    let rest_remaining = graph.unit_colored_vertices().minus(&fwd_reachable);
+
+    debug!(
+        target: "chain-saturation-hamming",
+        "Found SCC with {} state(s). Remaining-fwd: {}. Remaining-rest: {}.",
+        scc.exact_cardinality(),
+        fwd_remaining.exact_cardinality(),
+        rest_remaining.exact_cardinality(),
+    );
+
     if !fwd_remaining.is_empty() {
         let fwd_subgraph = graph.restrict(&fwd_remaining);
-
         let fwd_hint = pivot.ham_furthest_within(&fwd_remaining); // <-- the difference
-
         chain_rec_saturation_hamming_heuristic(&fwd_subgraph, &fwd_hint, scc_dump);
     }
 
-    let rest_remaining = graph.unit_colored_vertices().minus(&fwd_reachable);
     if !rest_remaining.is_empty() {
         let rest_subgraph = graph.restrict(&rest_remaining);
         let rest_hint = graph.pre(&scc).intersect(&rest_remaining);
         chain_rec_saturation_hamming_heuristic(&rest_subgraph, &rest_hint, scc_dump);
     }
+}
+
+// Version of chain with trimming, and rewritten to avoid recursion (just in
+// case we need to detect more than ~10.000 SCCs).
+pub fn chain_saturation_trim_hamming(
+    graph: &SymbolicAsyncGraph,
+) -> impl Iterator<Item = GraphColoredVertices> {
+    precondition_graph_not_colored(graph);
+
+    debug!(
+        target: "chain-saturation-trim",
+        "Start chain-saturation-trim SCC decomposition with {} state(s).",
+        graph.unit_colored_vertices().exact_cardinality()
+    );
+
+    let universe = graph.mk_unit_colored_vertices();
+    let universe = trim_bwd_naive(graph, &universe);
+    let universe = trim_fwd_naive(graph, &universe);
+
+    debug!(
+        target: "chain-saturation-trim",
+        "State space after initial trimming: {}.",
+        universe.exact_cardinality(),
+    );
+
+    let mut scc_dump = Vec::new();
+
+    if !universe.is_empty() {
+        let mut remaining = vec![(universe, graph.mk_empty_colored_vertices())];
+        while let Some((vertices, hint)) = remaining.pop() {
+            let r_graph = graph.restrict(&vertices);
+
+            debug!(
+                target: "chain-saturation-trim",
+                "Start chain-saturation-trim in sub-graph with {} state(s).",
+                vertices.exact_cardinality(),
+            );
+
+            let pivot_set = match hint.is_empty() {
+                true => r_graph.mk_unit_colored_vertices(),
+                false => hint,
+            };
+            let pivot = pivot_set.pick_singleton();
+
+            assert!(!pivot.is_empty());
+
+            let fwd_reachable = fwd_saturation(&r_graph, &pivot);
+
+            let scc = bwd_saturation(&r_graph.restrict(&fwd_reachable), &pivot);
+
+            // Output the scc.
+            if !scc.is_singleton() {
+                scc_dump.push(scc.clone());
+            }
+
+            let fwd_remaining = fwd_reachable.minus(&scc);
+            let fwd_remaining = trim_bwd_naive(&r_graph, &fwd_remaining);
+            let fwd_remaining = trim_fwd_naive(&r_graph, &fwd_remaining);
+            let rest_remaining = r_graph.unit_colored_vertices().minus(&fwd_reachable);
+            let rest_remaining = trim_bwd_naive(&r_graph, &rest_remaining);
+            let rest_remaining = trim_fwd_naive(&r_graph, &rest_remaining);
+
+            if !fwd_remaining.is_empty() {
+                let fwd_hint = pivot.ham_furthest_within(&fwd_remaining); // <-- the difference
+                remaining.push((fwd_remaining, fwd_hint));
+            }
+
+            if !rest_remaining.is_empty() {
+                let rest_hint = r_graph.pre(&scc).intersect(&rest_remaining);
+                remaining.push((rest_remaining, rest_hint));
+            }
+
+            debug!(
+                target: "chain-saturation-trim",
+                "Found SCC with {} state(s). Remaining states: {} in {} sets. SCCs so far: {}",
+                scc.exact_cardinality(),
+                remaining.iter().map(|(a, _)| a.exact_cardinality()).sum::<BigInt>(),
+                remaining.len(),
+                scc_dump.len(),
+            );
+        }
+    }
+
+    debug!(
+        target: "chain-saturation-trim",
+        "Finished SCC decomposition with {} SCCs.",
+        scc_dump.len()
+    );
+
+    scc_dump.into_iter()
 }
 
 #[cfg(test)]
@@ -263,7 +601,7 @@ mod tests {
 
     use crate::{
         chain::{chain, chain_saturation, chain_saturation_hamming_heuristic},
-        fwd_bwd::fwd_bwd_scc_decomposition,
+        fwd_bwd::fwd_bwd_scc_decomposition_naive,
     };
 
     fn basic_async_graph() -> SymbolicAsyncGraph {
@@ -356,7 +694,7 @@ mod tests {
         let async_graph = basic_async_graph();
 
         let chain_scc_set = chain(&async_graph).collect::<HashSet<_>>();
-        let fwd_bwd_scc_set = fwd_bwd_scc_decomposition(&async_graph).collect::<HashSet<_>>();
+        let fwd_bwd_scc_set = fwd_bwd_scc_decomposition_naive(&async_graph).collect::<HashSet<_>>();
 
         assert_eq!(chain_scc_set, fwd_bwd_scc_set);
     }
@@ -399,7 +737,7 @@ mod tests {
         );
 
         println!(" >> Computing FWD-BWD.");
-        let fwd_bwd_scc_set = fwd_bwd_scc_decomposition(&graph).collect::<HashSet<_>>();
+        let fwd_bwd_scc_set = fwd_bwd_scc_decomposition_naive(&graph).collect::<HashSet<_>>();
 
         println!(" >> Computing with {}.", std::any::type_name::<F>());
         let chain_scc_set = decomposition_fn(&graph).collect::<HashSet<_>>();
