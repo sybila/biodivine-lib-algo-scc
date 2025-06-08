@@ -15,21 +15,26 @@ use crate::{assert_precondition_graph_not_colored, hamming::Hamming};
 pub fn chain(graph: &SymbolicAsyncGraph) -> impl Iterator<Item = GraphColoredVertices> {
     assert_precondition_graph_not_colored(graph);
 
-    let mut scc_dump = Vec::new();
+    // todo request by ownership everywhere
+    let graph = graph.clone();
+
     // `chain_rec` assumes it can pick a pivot -> must not pass in an empty graph
     match graph.unit_vertices().is_empty() {
-        true => { /* no sccs in an empty graph */ }
-        false => chain_rec(
-            graph,
-            graph.empty_colored_vertices(), // no hint
-            &mut scc_dump,
-        ),
+        true => Default::default(),
+        false => {
+            let empty_colored_vertices = graph.empty_colored_vertices().clone();
+            chain_iterative(
+                graph,
+                empty_colored_vertices, // no hint
+            )
+        }
     }
-    scc_dump.into_iter()
+    .into_iter()
 }
 
-/// recursive version of the chain decomposition
-/// expects all the args to be of the same graph (given by the first parameter)
+/// the chain decomposition
+///
+///  expects all the args to be of the same graph (given by the first parameter)
 ///
 /// expects a nonempty graph (must be able to pick a pivot)
 ///
@@ -40,75 +45,86 @@ pub fn chain(graph: &SymbolicAsyncGraph) -> impl Iterator<Item = GraphColoredVer
 /// * `graph` - the graph to be decomposed
 /// * `vertices_hint` - the vertices that are already in the scc
 /// * `scc_dump` - used to "output" the SCCs
-fn chain_rec(
-    graph: &SymbolicAsyncGraph,
-    vertices_hint: &GraphColoredVertices,
-    scc_dump: &mut Vec<GraphColoredVertices>,
-) {
-    // todo consider using `debug_assert! everywhere` (test performance gain)
-    assert!(!graph.unit_vertices().is_empty());
-    assert!(vertices_hint.is_subset(graph.unit_colored_vertices()));
+fn chain_iterative(
+    graph: SymbolicAsyncGraph,
+    vertices_hint: GraphColoredVertices,
+) -> Vec<GraphColoredVertices> {
+    let mut output = Vec::<GraphColoredVertices>::new();
+    let mut stack = vec![(graph, vertices_hint)];
 
-    let pivot_set = match vertices_hint.is_empty() {
-        true => graph.unit_colored_vertices(),
-        false => vertices_hint,
-    };
-    let pivot = pivot_set.pick_singleton();
+    while let Some((graph, vertices_hint)) = stack.pop() {
+        assert!(!graph.unit_vertices().is_empty());
+        assert!(vertices_hint.is_subset(graph.unit_colored_vertices()));
 
-    assert!(!pivot.is_empty()); // trivially true; subgraph is nonempty (else returned above)
+        let pivot_set = match vertices_hint.is_empty() {
+            true => graph.unit_colored_vertices(),
+            false => &vertices_hint,
+        };
+        let pivot = pivot_set.pick_singleton();
 
-    let mut fwd_reachable_acc = pivot.clone();
-    let mut current_layer = pivot.clone();
-    loop {
-        let next_layer = graph.post(&current_layer).minus(&fwd_reachable_acc); // take only the *proper* layer
+        assert!(!pivot.is_empty()); // trivially true; subgraph is nonempty (else returned above)
 
-        if next_layer.is_empty() {
-            break;
+        let mut fwd_reachable_acc = pivot.clone();
+        let mut current_layer = pivot.clone();
+        loop {
+            let next_layer = graph.post(&current_layer).minus(&fwd_reachable_acc); // take only the *proper* layer
+
+            if next_layer.is_empty() {
+                break;
+            }
+
+            fwd_reachable_acc = fwd_reachable_acc.union(&next_layer);
+            current_layer = next_layer;
         }
 
-        fwd_reachable_acc = fwd_reachable_acc.union(&next_layer);
-        current_layer = next_layer;
-    }
+        let fwd_reachable = fwd_reachable_acc;
+        let last_fwd_layer = current_layer;
 
-    let fwd_reachable = fwd_reachable_acc;
-    let last_fwd_layer = current_layer;
+        let mut restricted_bwd_reachable_acc = pivot;
+        let graph_fwd_restricted = graph.restrict(&fwd_reachable);
+        loop {
+            let restricted_pre = graph_fwd_restricted // not really a proper *layer*; not cleaned (`.minus(...)`)
+                .pre(&restricted_bwd_reachable_acc);
 
-    let mut restricted_bwd_reachable_acc = pivot.clone();
-    let graph_fwd_restricted = graph.restrict(&fwd_reachable);
-    loop {
-        let restricted_pre = graph_fwd_restricted // not really a proper *layer*; not cleaned (`.minus(...)`)
-            .pre(&restricted_bwd_reachable_acc);
+            if restricted_pre.is_subset(&restricted_bwd_reachable_acc) {
+                break; // no further progress possible
+            }
 
-        if restricted_pre.is_subset(&restricted_bwd_reachable_acc) {
-            break; // no further progress possible
+            restricted_bwd_reachable_acc = restricted_bwd_reachable_acc.union(&restricted_pre);
         }
 
-        restricted_bwd_reachable_acc = restricted_bwd_reachable_acc.union(&restricted_pre);
+        let the_scc = restricted_bwd_reachable_acc;
+
+        // Output the scc.
+        // todo perf move to the end of this fn to avoid clone (mind the inversed order)
+        if !the_scc.is_singleton() {
+            // todo this filter should probably be a part of a config/parameter
+            output.push(the_scc.clone());
+        }
+
+        let fwd_remaining = fwd_reachable.minus(&the_scc);
+        if !fwd_remaining.is_empty() {
+            let fwd_subgraph = graph.restrict(&fwd_remaining);
+            let fwd_hint = last_fwd_layer.minus(&the_scc);
+
+            // "recursive call"
+            stack.push((fwd_subgraph, fwd_hint));
+        }
+
+        let rest_remaining = graph.unit_colored_vertices().minus(&fwd_reachable);
+        if !rest_remaining.is_empty() {
+            let rest_subgraph = graph.restrict(&rest_remaining);
+            let rest_hint = graph.pre(&the_scc).intersect(&rest_remaining);
+
+            // "recursive call"
+            stack.push((rest_subgraph, rest_hint));
+        }
     }
 
-    let the_scc = restricted_bwd_reachable_acc;
-
-    // Output the scc.
-    // todo perf move to the end of this fn to avoid clone (mind the inversed order)
-    if !the_scc.is_singleton() {
-        // todo this filter should probably be a part of a config/parameter
-        scc_dump.push(the_scc.clone());
-    }
-
-    let fwd_remaining = fwd_reachable.minus(&the_scc);
-    if !fwd_remaining.is_empty() {
-        let fwd_subgraph = graph.restrict(&fwd_remaining);
-        let fwd_hint = last_fwd_layer.minus(&the_scc);
-        chain_rec(&fwd_subgraph, &fwd_hint, scc_dump);
-    }
-
-    let rest_remaining = graph.unit_colored_vertices().minus(&fwd_reachable);
-    if !rest_remaining.is_empty() {
-        let rest_subgraph = graph.restrict(&rest_remaining);
-        let rest_hint = graph.pre(&the_scc).intersect(&rest_remaining);
-        chain_rec(&rest_subgraph, &rest_hint, scc_dump);
-    }
+    output
 }
+
+// todo make the others iterative as well
 
 /// Does the decomposition of the graph to SCCs,
 /// but using the *saturation* strategy to perform the forward and backward
