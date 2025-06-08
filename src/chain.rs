@@ -134,17 +134,21 @@ fn chain_iterative(
 pub fn chain_saturation(graph: &SymbolicAsyncGraph) -> impl Iterator<Item = GraphColoredVertices> {
     assert_precondition_graph_not_colored(graph);
 
-    let mut scc_dump = Vec::new();
+    // todo request by ownership everywhere
+    let graph = graph.clone();
+
     // `chain_rec` assumes it can pick a pivot -> must not pass in an empty graph
     match graph.unit_vertices().is_empty() {
-        true => { /* no sccs in an empty graph */ }
-        false => chain_rec_saturation(
-            graph,
-            graph.empty_colored_vertices(), // no hint
-            &mut scc_dump,
-        ),
+        true => Default::default(),
+        false => {
+            let empty_colored_vertices = graph.empty_colored_vertices().clone();
+            _chain_saturation(
+                graph,
+                empty_colored_vertices, // no hint
+            )
+        }
     }
-    scc_dump.into_iter()
+    .into_iter()
 }
 
 fn fwd_saturation(
@@ -197,50 +201,58 @@ fn bwd_saturation(
     }
 }
 
-fn chain_rec_saturation(
-    graph: &SymbolicAsyncGraph,
-    vertices_hint: &GraphColoredVertices,
-    scc_dump: &mut Vec<GraphColoredVertices>,
-) {
-    assert!(!graph.unit_vertices().is_empty());
+fn _chain_saturation(
+    graph: SymbolicAsyncGraph,
+    vertices_hint: GraphColoredVertices,
+) -> Vec<GraphColoredVertices> {
+    let mut output = Vec::<GraphColoredVertices>::new();
+    let mut stack = vec![(graph, vertices_hint)];
 
-    let pivot_set = match vertices_hint.is_empty() {
-        true => graph.unit_colored_vertices(),
-        false => vertices_hint,
-    };
-    let pivot = pivot_set.pick_singleton();
+    while let Some((graph, vertices_hint)) = stack.pop() {
+        assert!(!graph.unit_vertices().is_empty());
 
-    assert!(!pivot.is_empty()); // trivially true; subgraph is nonempty (else returned above)
+        let pivot_set = match vertices_hint.is_empty() {
+            true => graph.unit_colored_vertices(),
+            false => &vertices_hint,
+        };
+        let pivot = pivot_set.pick_singleton();
 
-    let fwd_reachable = fwd_saturation(graph, &pivot);
+        assert!(!pivot.is_empty()); // trivially true; subgraph is nonempty (else returned above)
 
-    let scc = bwd_saturation(&graph.restrict(&fwd_reachable), &pivot);
+        let fwd_reachable = fwd_saturation(&graph, &pivot);
 
-    // Output the scc.
-    // todo move to the end to avoid clone - beware of the change in the order
-    if !scc.is_singleton() {
-        // todo this filter should probably be a part of a config/parameter
-        scc_dump.push(scc.clone());
+        let scc = bwd_saturation(&graph.restrict(&fwd_reachable), &pivot);
+
+        // Output the scc.
+        // todo move to the end to avoid clone - beware of the change in the order
+        if !scc.is_singleton() {
+            // todo this filter should probably be a part of a config/parameter
+            output.push(scc.clone());
+        }
+
+        let fwd_remaining = fwd_reachable.minus(&scc);
+        if !fwd_remaining.is_empty() {
+            let fwd_subgraph = graph.restrict(&fwd_remaining);
+
+            // todo use better heuristic (hamming dist?); want to get close to the "bottom"
+            // todo beware of correctness; must pick the hint from somewhere else than the scc
+            // let fwd_hint = last_fwd_layer.minus(&the_scc);
+            let fwd_hint = fwd_remaining;
+
+            // chain_rec_saturation(&fwd_subgraph, &fwd_hint, scc_dump);
+            stack.push((fwd_subgraph, fwd_hint));
+        }
+
+        let rest_remaining = graph.unit_colored_vertices().minus(&fwd_reachable);
+        if !rest_remaining.is_empty() {
+            let rest_subgraph = graph.restrict(&rest_remaining);
+            let rest_hint = graph.pre(&scc).intersect(&rest_remaining);
+            // chain_rec_saturation(&rest_subgraph, &rest_hint, scc_dump);
+            stack.push((rest_subgraph, rest_hint));
+        }
     }
 
-    let fwd_remaining = fwd_reachable.minus(&scc);
-    if !fwd_remaining.is_empty() {
-        let fwd_subgraph = graph.restrict(&fwd_remaining);
-
-        // todo use better heuristic (hamming dist?); want to get close to the "bottom"
-        // todo beware of correctness; must pick the hint from somewhere else than the scc
-        // let fwd_hint = last_fwd_layer.minus(&the_scc);
-        let fwd_hint = fwd_remaining;
-
-        chain_rec_saturation(&fwd_subgraph, &fwd_hint, scc_dump);
-    }
-
-    let rest_remaining = graph.unit_colored_vertices().minus(&fwd_reachable);
-    if !rest_remaining.is_empty() {
-        let rest_subgraph = graph.restrict(&rest_remaining);
-        let rest_hint = graph.pre(&scc).intersect(&rest_remaining);
-        chain_rec_saturation(&rest_subgraph, &rest_hint, scc_dump);
-    }
+    output
 }
 
 /// Does the decomposition of the graph to SCCs,
@@ -253,63 +265,79 @@ pub fn chain_saturation_hamming_heuristic(
 ) -> impl Iterator<Item = GraphColoredVertices> {
     assert_precondition_graph_not_colored(graph);
 
-    let mut scc_dump = Vec::new();
+    // todo request by ownership everywhere
+    let graph = graph.clone();
+
+    // `chain_rec` assumes it can pick a pivot -> must not pass in an empty graph
     match graph.unit_vertices().is_empty() {
-        true => { /* no sccs in an empty graph */ }
-        false => chain_rec_saturation_hamming_heuristic(
-            graph,
-            graph.empty_colored_vertices(), // no hint
-            &mut scc_dump,
-        ),
+        true => Default::default(),
+        false => {
+            let empty_colored_vertices = graph.empty_colored_vertices().clone();
+            _chain_saturation_hamming_heuristic(
+                graph,
+                empty_colored_vertices, // no hint
+            )
+        }
     }
-    scc_dump.into_iter()
+    .into_iter()
 }
 
 // todo consider adding `chain_hamming_heuristic`? - to have the full
 // `{with_saturation, without_saturation} x {with_hamming, without_hamming}`
 // options?
 
-fn chain_rec_saturation_hamming_heuristic(
-    graph: &SymbolicAsyncGraph,
-    vertices_hint: &GraphColoredVertices,
-    scc_dump: &mut Vec<GraphColoredVertices>,
-) {
-    assert!(!graph.unit_vertices().is_empty());
+fn _chain_saturation_hamming_heuristic(
+    graph: SymbolicAsyncGraph,
+    vertices_hint: GraphColoredVertices,
+) -> Vec<GraphColoredVertices> {
+    let graph = graph.clone();
+    let vertices_hint = vertices_hint.clone();
 
-    let pivot_set = match vertices_hint.is_empty() {
-        true => graph.unit_colored_vertices(),
-        false => vertices_hint,
-    };
-    let pivot = pivot_set.pick_singleton();
+    let mut stack = vec![(graph, vertices_hint)];
+    let mut ouput = Vec::<GraphColoredVertices>::new();
 
-    assert!(!pivot.is_empty()); // trivially true; subgraph is nonempty (else returned above)
+    while let Some((graph, vertices_hint)) = stack.pop() {
+        assert!(!graph.unit_vertices().is_empty());
 
-    let fwd_reachable = fwd_saturation(graph, &pivot);
+        let pivot_set = match vertices_hint.is_empty() {
+            true => graph.unit_colored_vertices(),
+            false => &vertices_hint,
+        };
+        let pivot = pivot_set.pick_singleton();
 
-    let scc = bwd_saturation(&graph.restrict(&fwd_reachable), &pivot);
+        assert!(!pivot.is_empty()); // trivially true; subgraph is nonempty (else returned above)
 
-    // Output the scc.
-    // todo
-    if !scc.is_singleton() {
-        // todo this filter should probably be a part of a config/parameter
-        scc_dump.push(scc.clone());
+        let fwd_reachable = fwd_saturation(&graph, &pivot);
+
+        let scc = bwd_saturation(&graph.restrict(&fwd_reachable), &pivot);
+
+        // Output the scc.
+        // todo
+        if !scc.is_singleton() {
+            // todo this filter should probably be a part of a config/parameter
+            ouput.push(scc.clone());
+        }
+
+        let fwd_remaining = fwd_reachable.minus(&scc);
+        if !fwd_remaining.is_empty() {
+            let fwd_subgraph = graph.restrict(&fwd_remaining);
+
+            let fwd_hint = pivot.ham_furthest_within(&fwd_remaining); // <-- the difference
+
+            // chain_rec_saturation_hamming_heuristic(&fwd_subgraph, &fwd_hint, scc_dump);
+            stack.push((fwd_subgraph, fwd_hint));
+        }
+
+        let rest_remaining = graph.unit_colored_vertices().minus(&fwd_reachable);
+        if !rest_remaining.is_empty() {
+            let rest_subgraph = graph.restrict(&rest_remaining);
+            let rest_hint = graph.pre(&scc).intersect(&rest_remaining);
+            // chain_rec_saturation_hamming_heuristic(&rest_subgraph, &rest_hint, scc_dump);
+            stack.push((rest_subgraph, rest_hint));
+        }
     }
 
-    let fwd_remaining = fwd_reachable.minus(&scc);
-    if !fwd_remaining.is_empty() {
-        let fwd_subgraph = graph.restrict(&fwd_remaining);
-
-        let fwd_hint = pivot.ham_furthest_within(&fwd_remaining); // <-- the difference
-
-        chain_rec_saturation_hamming_heuristic(&fwd_subgraph, &fwd_hint, scc_dump);
-    }
-
-    let rest_remaining = graph.unit_colored_vertices().minus(&fwd_reachable);
-    if !rest_remaining.is_empty() {
-        let rest_subgraph = graph.restrict(&rest_remaining);
-        let rest_hint = graph.pre(&scc).intersect(&rest_remaining);
-        chain_rec_saturation_hamming_heuristic(&rest_subgraph, &rest_hint, scc_dump);
-    }
+    ouput
 }
 
 #[cfg(test)]
