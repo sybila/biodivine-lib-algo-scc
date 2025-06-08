@@ -7,14 +7,14 @@ use biodivine_lib_param_bn::{
 };
 
 pub fn fwd_bwd_scc_decomposition_naive(
-    graph: &SymbolicAsyncGraph,
+    graph: SymbolicAsyncGraph,
 ) -> impl Iterator<Item = GraphColoredVertices> {
-    assert_precondition_graph_not_colored(graph);
+    assert_precondition_graph_not_colored(&graph);
 
     let mut scc_dump = Vec::new();
     let mut remaining_space = graph.mk_unit_colored_vertices();
     while !remaining_space.is_empty() {
-        let scc = get_some_scc_naive(graph, &remaining_space);
+        let scc = get_some_scc_naive(&graph, &remaining_space);
         remaining_space = remaining_space.minus(&scc);
 
         // todo should likely be part of the config

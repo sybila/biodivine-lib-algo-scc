@@ -12,11 +12,8 @@ use crate::{assert_precondition_graph_not_colored, hamming::Hamming};
 /// also colored version wanted (as another method)
 ///
 /// The order of the output sccs is undefined.
-pub fn chain(graph: &SymbolicAsyncGraph) -> impl Iterator<Item = GraphColoredVertices> {
-    assert_precondition_graph_not_colored(graph);
-
-    // todo request by ownership everywhere
-    let graph = graph.clone();
+pub fn chain(graph: SymbolicAsyncGraph) -> impl Iterator<Item = GraphColoredVertices> {
+    assert_precondition_graph_not_colored(&graph);
 
     // `chain_rec` assumes it can pick a pivot -> must not pass in an empty graph
     match graph.unit_vertices().is_empty() {
@@ -131,11 +128,8 @@ fn chain_iterative(
 /// reachability.
 ///
 /// The order of the output sccs is undefined.
-pub fn chain_saturation(graph: &SymbolicAsyncGraph) -> impl Iterator<Item = GraphColoredVertices> {
-    assert_precondition_graph_not_colored(graph);
-
-    // todo request by ownership everywhere
-    let graph = graph.clone();
+pub fn chain_saturation(graph: SymbolicAsyncGraph) -> impl Iterator<Item = GraphColoredVertices> {
+    assert_precondition_graph_not_colored(&graph);
 
     // `chain_rec` assumes it can pick a pivot -> must not pass in an empty graph
     match graph.unit_vertices().is_empty() {
@@ -261,12 +255,9 @@ fn _chain_saturation(
 ///
 /// The order of the output sccs is undefined.
 pub fn chain_saturation_hamming_heuristic(
-    graph: &SymbolicAsyncGraph,
+    graph: SymbolicAsyncGraph,
 ) -> impl Iterator<Item = GraphColoredVertices> {
-    assert_precondition_graph_not_colored(graph);
-
-    // todo request by ownership everywhere
-    let graph = graph.clone();
+    assert_precondition_graph_not_colored(&graph);
 
     // `chain_rec` assumes it can pick a pivot -> must not pass in an empty graph
     match graph.unit_vertices().is_empty() {
@@ -372,7 +363,7 @@ mod tests {
 
     fn basic_decomposition<F, I>(decomposition_fn: F)
     where
-        F: Fn(&SymbolicAsyncGraph) -> I,
+        F: Fn(SymbolicAsyncGraph) -> I,
         I: Iterator<Item = GraphColoredVertices>,
     {
         let async_graph = basic_async_graph();
@@ -417,7 +408,7 @@ mod tests {
             async_graph.unit_colors().exact_cardinality()
         );
 
-        let scc_vec = decomposition_fn(&async_graph).collect::<Vec<_>>();
+        let scc_vec = decomposition_fn(async_graph).collect::<Vec<_>>();
 
         assert_eq!(scc_vec.len(), 2);
 
@@ -446,15 +437,15 @@ mod tests {
     fn compare_chain_fwd_bwd_basic_graph() {
         let async_graph = basic_async_graph();
 
-        let chain_scc_set = chain(&async_graph).collect::<HashSet<_>>();
-        let fwd_bwd_scc_set = fwd_bwd_scc_decomposition_naive(&async_graph).collect::<HashSet<_>>();
+        let chain_scc_set = chain(async_graph.clone()).collect::<HashSet<_>>();
+        let fwd_bwd_scc_set = fwd_bwd_scc_decomposition_naive(async_graph).collect::<HashSet<_>>();
 
         assert_eq!(chain_scc_set, fwd_bwd_scc_set);
     }
 
     fn compare_fn_with_fwd_bwd<F, I>(model_path: &str, decomposition_fn: F)
     where
-        F: Fn(&SymbolicAsyncGraph) -> I,
+        F: Fn(SymbolicAsyncGraph) -> I,
         I: Iterator<Item = GraphColoredVertices>,
     {
         let bn = BooleanNetwork::try_from_file(model_path).unwrap();
@@ -490,10 +481,11 @@ mod tests {
         );
 
         println!(" >> Computing FWD-BWD.");
-        let fwd_bwd_scc_set = fwd_bwd_scc_decomposition_naive(&graph).collect::<HashSet<_>>();
+        let fwd_bwd_scc_set =
+            fwd_bwd_scc_decomposition_naive(graph.clone()).collect::<HashSet<_>>();
 
         println!(" >> Computing with {}.", std::any::type_name::<F>());
-        let chain_scc_set = decomposition_fn(&graph).collect::<HashSet<_>>();
+        let chain_scc_set = decomposition_fn(graph).collect::<HashSet<_>>();
 
         println!(" >> Found {} SCCs.", fwd_bwd_scc_set.len());
 
