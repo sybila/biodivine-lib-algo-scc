@@ -6,7 +6,7 @@ use biodivine_lib_param_bn::{
     symbolic_async_graph::{GraphColoredVertices, SymbolicAsyncGraph},
 };
 
-pub fn fwd_bwd_scc_decomposition(
+pub fn fwd_bwd_scc_decomposition_naive(
     graph: &SymbolicAsyncGraph,
 ) -> impl Iterator<Item = GraphColoredVertices> {
     assert_precondition_graph_not_colored(graph);
@@ -14,7 +14,7 @@ pub fn fwd_bwd_scc_decomposition(
     let mut scc_dump = Vec::new();
     let mut remaining_space = graph.mk_unit_colored_vertices();
     while !remaining_space.is_empty() {
-        let scc = get_some_scc(graph, &remaining_space);
+        let scc = get_some_scc_naive(graph, &remaining_space);
         remaining_space = remaining_space.minus(&scc);
         scc_dump.push(scc);
     }
@@ -22,7 +22,7 @@ pub fn fwd_bwd_scc_decomposition(
     scc_dump.into_iter()
 }
 
-fn get_some_scc(
+fn get_some_scc_naive(
     graph: &SymbolicAsyncGraph,
     space_to_pick_from: &GraphColoredVertices,
 ) -> GraphColoredVertices {
@@ -30,6 +30,7 @@ fn get_some_scc(
 
     let pivot = space_to_pick_from.pick_singleton();
 
+    // do not use these functions - they use some optimizations
     // let fwd = graph.reach_forward(&pivot);
     // let bwd = graph.reach_backward(&pivot);
 
