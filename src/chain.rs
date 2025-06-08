@@ -92,13 +92,6 @@ fn chain_iterative(
 
         let the_scc = restricted_bwd_reachable_acc;
 
-        // Output the scc.
-        // todo perf move to the end of this fn to avoid clone (mind the inversed order)
-        if !the_scc.is_singleton() {
-            // todo this filter should probably be a part of a config/parameter
-            output.push(the_scc.clone());
-        }
-
         let fwd_remaining = fwd_reachable.minus(&the_scc);
         if !fwd_remaining.is_empty() {
             let fwd_subgraph = graph.restrict(&fwd_remaining);
@@ -116,12 +109,16 @@ fn chain_iterative(
             // "recursive call"
             stack.push((rest_subgraph, rest_hint));
         }
+
+        // Output the scc.
+        if !the_scc.is_singleton() {
+            // todo this filter should probably be a part of a config/parameter
+            output.push(the_scc);
+        }
     }
 
     output
 }
-
-// todo make the others iterative as well
 
 /// Does the decomposition of the graph to SCCs,
 /// but using the *saturation* strategy to perform the forward and backward
@@ -151,8 +148,7 @@ fn fwd_saturation(
 ) -> GraphColoredVertices {
     let mut result_accumulator = initial.clone();
 
-    // todo likely better perf, right?
-    // todo do not collect
+    // better to collect; there is some computation to producing `variables()`
     let rev_variables = graph.variables().rev().collect::<Vec<_>>();
 
     'from_bottom_var: loop {
@@ -176,8 +172,7 @@ fn bwd_saturation(
 ) -> GraphColoredVertices {
     let mut result_accumulator = initial.clone();
 
-    // todo likely better perf, right?
-    // todo do not collect
+    // better to collect; there is some computation to producing `variables()`
     let rev_variables = graph.variables().rev().collect::<Vec<_>>();
 
     'from_bottom_var: loop {
@@ -217,20 +212,10 @@ fn _chain_saturation(
 
         let scc = bwd_saturation(&graph.restrict(&fwd_reachable), &pivot);
 
-        // Output the scc.
-        // todo move to the end to avoid clone - beware of the change in the order
-        if !scc.is_singleton() {
-            // todo this filter should probably be a part of a config/parameter
-            output.push(scc.clone());
-        }
-
         let fwd_remaining = fwd_reachable.minus(&scc);
         if !fwd_remaining.is_empty() {
             let fwd_subgraph = graph.restrict(&fwd_remaining);
-
-            // todo use better heuristic (hamming dist?); want to get close to the "bottom"
-            // todo beware of correctness; must pick the hint from somewhere else than the scc
-            // let fwd_hint = last_fwd_layer.minus(&the_scc);
+            // no better estimate in this implementation
             let fwd_hint = fwd_remaining;
 
             // chain_rec_saturation(&fwd_subgraph, &fwd_hint, scc_dump);
@@ -241,8 +226,15 @@ fn _chain_saturation(
         if !rest_remaining.is_empty() {
             let rest_subgraph = graph.restrict(&rest_remaining);
             let rest_hint = graph.pre(&scc).intersect(&rest_remaining);
+
             // chain_rec_saturation(&rest_subgraph, &rest_hint, scc_dump);
             stack.push((rest_subgraph, rest_hint));
+        }
+
+        // Output the scc.
+        if !scc.is_singleton() {
+            // todo this filter should probably be a part of a config/parameter
+            output.push(scc);
         }
     }
 
@@ -302,13 +294,6 @@ fn _chain_saturation_hamming_heuristic(
 
         let scc = bwd_saturation(&graph.restrict(&fwd_reachable), &pivot);
 
-        // Output the scc.
-        // todo
-        if !scc.is_singleton() {
-            // todo this filter should probably be a part of a config/parameter
-            ouput.push(scc.clone());
-        }
-
         let fwd_remaining = fwd_reachable.minus(&scc);
         if !fwd_remaining.is_empty() {
             let fwd_subgraph = graph.restrict(&fwd_remaining);
@@ -325,6 +310,12 @@ fn _chain_saturation_hamming_heuristic(
             let rest_hint = graph.pre(&scc).intersect(&rest_remaining);
             // chain_rec_saturation_hamming_heuristic(&rest_subgraph, &rest_hint, scc_dump);
             stack.push((rest_subgraph, rest_hint));
+        }
+
+        // Output the scc.
+        if !scc.is_singleton() {
+            // todo this filter should probably be a part of a config/parameter
+            ouput.push(scc);
         }
     }
 
