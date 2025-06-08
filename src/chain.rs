@@ -90,7 +90,10 @@ fn chain_rec(
 
     // Output the scc.
     // todo perf move to the end of this fn to avoid clone (mind the inversed order)
-    scc_dump.push(the_scc.clone());
+    if !the_scc.is_singleton() {
+        // todo this filter should probably be a part of a config/parameter
+        scc_dump.push(the_scc.clone());
+    }
 
     let fwd_remaining = fwd_reachable.minus(&the_scc);
     if !fwd_remaining.is_empty() {
@@ -199,7 +202,10 @@ fn chain_rec_saturation(
 
     // Output the scc.
     // todo move to the end to avoid clone - beware of the change in the order
-    scc_dump.push(scc.clone());
+    if !scc.is_singleton() {
+        // todo this filter should probably be a part of a config/parameter
+        scc_dump.push(scc.clone());
+    }
 
     let fwd_remaining = fwd_reachable.minus(&scc);
     if !fwd_remaining.is_empty() {
@@ -268,7 +274,10 @@ fn chain_rec_saturation_hamming_heuristic(
 
     // Output the scc.
     // todo
-    scc_dump.push(scc.clone());
+    if !scc.is_singleton() {
+        // todo this filter should probably be a part of a config/parameter
+        scc_dump.push(scc.clone());
+    }
 
     let fwd_remaining = fwd_reachable.minus(&scc);
     if !fwd_remaining.is_empty() {
@@ -301,7 +310,7 @@ mod tests {
 
     use crate::{
         chain::{chain, chain_saturation, chain_saturation_hamming_heuristic},
-        fwd_bwd::fwd_bwd_scc_decomposition,
+        fwd_bwd::fwd_bwd_scc_decomposition_naive,
     };
 
     fn basic_async_graph() -> SymbolicAsyncGraph {
@@ -394,7 +403,7 @@ mod tests {
         let async_graph = basic_async_graph();
 
         let chain_scc_set = chain(&async_graph).collect::<HashSet<_>>();
-        let fwd_bwd_scc_set = fwd_bwd_scc_decomposition(&async_graph).collect::<HashSet<_>>();
+        let fwd_bwd_scc_set = fwd_bwd_scc_decomposition_naive(&async_graph).collect::<HashSet<_>>();
 
         assert_eq!(chain_scc_set, fwd_bwd_scc_set);
     }
@@ -437,7 +446,7 @@ mod tests {
         );
 
         println!(" >> Computing FWD-BWD.");
-        let fwd_bwd_scc_set = fwd_bwd_scc_decomposition(&graph).collect::<HashSet<_>>();
+        let fwd_bwd_scc_set = fwd_bwd_scc_decomposition_naive(&graph).collect::<HashSet<_>>();
 
         println!(" >> Computing with {}.", std::any::type_name::<F>());
         let chain_scc_set = decomposition_fn(&graph).collect::<HashSet<_>>();
