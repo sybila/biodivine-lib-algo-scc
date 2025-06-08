@@ -3,6 +3,7 @@ use biodivine_lib_param_bn::symbolic_async_graph::SymbolicAsyncGraph;
 pub mod chain;
 pub mod fwd_bwd;
 mod hamming;
+mod trimming;
 
 /// Assert that the given graph has no colors.
 fn assert_precondition_graph_not_colored(graph: &SymbolicAsyncGraph) {
