@@ -16,7 +16,11 @@ pub fn fwd_bwd_scc_decomposition_naive(
     while !remaining_space.is_empty() {
         let scc = get_some_scc_naive(graph, &remaining_space);
         remaining_space = remaining_space.minus(&scc);
-        scc_dump.push(scc);
+
+        // todo should likely be part of the config
+        if !scc.is_singleton() {
+            scc_dump.push(scc);
+        }
     }
 
     scc_dump.into_iter()
