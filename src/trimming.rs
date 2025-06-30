@@ -21,10 +21,7 @@ use biodivine_lib_param_bn::symbolic_async_graph::{GraphColoredVertices, Symboli
 ///
 /// (A trivial SCC may still be between two non-trivial SCCs - such will not be
 /// detected, hence *overapproximation*)
-pub(crate) fn trim_trailing(
-    graph: &SymbolicAsyncGraph,
-    set: GraphColoredVertices,
-) -> GraphColoredVertices {
+fn trim_trailing(graph: &SymbolicAsyncGraph, set: GraphColoredVertices) -> GraphColoredVertices {
     match set.is_empty() {
         true => set,
         false => {
@@ -52,10 +49,7 @@ pub(crate) fn trim_trailing(
 ///
 /// (A trivial SCC may still be between two non-trivial SCCs - such will not be
 /// detected, hence *overapproximation*)
-pub(crate) fn trim_leading(
-    graph: &SymbolicAsyncGraph,
-    set: GraphColoredVertices,
-) -> GraphColoredVertices {
+fn trim_leading(graph: &SymbolicAsyncGraph, set: GraphColoredVertices) -> GraphColoredVertices {
     match set.is_empty() {
         true => set,
         false => {
@@ -71,4 +65,18 @@ pub(crate) fn trim_leading(
             }
         }
     }
+}
+
+/// Trims *easy to detect* *trivial SCCs*.
+///
+/// Filters out those states from the `set` that are not on a cycle (therefore
+/// cannot be a member of a *non-trivial SCC*).
+///
+/// Returns the rest of the nodes from the `set` - an overapproximation of the
+/// nodes that are in *non-trivial* components.
+///
+/// (A trivial SCC may still be between two non-trivial SCCs - such will not be
+/// detected, hence *overapproximation*)
+pub(crate) fn trim(graph: &SymbolicAsyncGraph, set: GraphColoredVertices) -> GraphColoredVertices {
+    trim_trailing(graph, trim_leading(graph, set))
 }

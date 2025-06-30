@@ -3,7 +3,22 @@ use biodivine_lib_param_bn::{
     symbolic_async_graph::{GraphColoredVertices, SymbolicAsyncGraph},
 };
 
-use crate::{assert_precondition_graph_not_colored, hamming::Hamming};
+use crate::{assert_precondition_graph_not_colored, hamming::Hamming, trimming::trim};
+
+#[derive(Clone, Copy, Debug, Default)]
+pub enum TrimLvl {
+    /// Do not trim *trivial SCCs* at all
+    #[default]
+    None,
+    /// Only trim *trivial SCCs* before the start of the decomposition itself.
+    /// Some *trivial SCCs* may still make it into the result - namely if an
+    /// SCC is on a path between two *non-trivial SCCs*.
+    StartOnly,
+    /// Trim *trivial SCCs* before each "iteration" of the decomposition.
+    /// This ensures all *trivial SCCs* (even those between two *non-trivial
+    /// SCCs* are filtered out).
+    Full,
+}
 
 /// does the decomposition of the graph to SCCs
 /// should be made iterative sometime in the future
@@ -12,18 +27,48 @@ use crate::{assert_precondition_graph_not_colored, hamming::Hamming};
 /// also colored version wanted (as another method)
 ///
 /// The order of the output sccs is undefined.
-pub fn chain(graph: SymbolicAsyncGraph) -> impl Iterator<Item = GraphColoredVertices> {
+pub fn chain(
+    graph: SymbolicAsyncGraph,
+    trim_lvl: TrimLvl,
+) -> impl Iterator<Item = GraphColoredVertices> {
     assert_precondition_graph_not_colored(&graph);
 
-    // `chain_rec` assumes it can pick a pivot -> must not pass in an empty graph
-    match graph.unit_vertices().is_empty() {
-        true => Default::default(),
-        false => {
-            let empty_colored_vertices = graph.empty_colored_vertices().clone();
-            chain_iterative(
-                graph,
-                empty_colored_vertices, // no hint
-            )
+    const fn identity(_: &SymbolicAsyncGraph, it: GraphColoredVertices) -> GraphColoredVertices {
+        it
+    }
+
+    match trim_lvl {
+        TrimLvl::None => match graph.unit_vertices().is_empty() {
+            true => Default::default(),
+            false => {
+                let no_hint = graph.empty_colored_vertices().clone();
+
+                chain_iterative(graph, no_hint, /* noop - no trim */ identity)
+            }
+        },
+        TrimLvl::StartOnly => {
+            let trimmed = trim(&graph, graph.unit_colored_vertices().clone());
+            let graph = graph.restrict(&trimmed);
+
+            match graph.unit_vertices().is_empty() {
+                true => Default::default(),
+                false => {
+                    let no_hint = graph.empty_colored_vertices().clone();
+                    chain_iterative(graph, no_hint, /* noop - no trim */ identity)
+                }
+            }
+        }
+        TrimLvl::Full => {
+            let trimmed = trim(&graph, graph.unit_colored_vertices().clone());
+            let graph = graph.restrict(&trimmed);
+
+            match graph.unit_vertices().is_empty() {
+                true => Default::default(),
+                false => {
+                    let no_hint = graph.empty_colored_vertices().clone();
+                    chain_iterative(graph, no_hint, /* trim every iteration */ trim)
+                }
+            }
         }
     }
     .into_iter()
@@ -39,12 +84,14 @@ pub fn chain(graph: SymbolicAsyncGraph) -> impl Iterator<Item = GraphColoredVert
 ///
 /// # Arguments
 ///
-/// * `graph` - the graph to be decomposed
+/// * `graph` - the graph to be decomposed - must not be empty
 /// * `vertices_hint` - the vertices that are already in the scc
-/// * `scc_dump` - used to "output" the SCCs
+/// * `restrictor` - function that further restricts the sets that are to be
+///   "recursively" decomposed into SCCs. Pass in `|_, it| it` to ignore this.
 fn chain_iterative(
     graph: SymbolicAsyncGraph,
     vertices_hint: GraphColoredVertices,
+    restrictor: fn(&SymbolicAsyncGraph, GraphColoredVertices) -> GraphColoredVertices,
 ) -> Vec<GraphColoredVertices> {
     let mut output = Vec::<GraphColoredVertices>::new();
     let mut stack = vec![(graph, vertices_hint)];
@@ -93,6 +140,7 @@ fn chain_iterative(
         let the_scc = restricted_bwd_reachable_acc;
 
         let fwd_remaining = fwd_reachable.minus(&the_scc);
+        let fwd_remaining = restrictor(&graph, fwd_remaining);
         if !fwd_remaining.is_empty() {
             let fwd_subgraph = graph.restrict(&fwd_remaining);
             let fwd_hint = last_fwd_layer.minus(&the_scc);
@@ -102,6 +150,7 @@ fn chain_iterative(
         }
 
         let rest_remaining = graph.unit_colored_vertices().minus(&fwd_reachable);
+        let rest_remaining = restrictor(&graph, rest_remaining);
         if !rest_remaining.is_empty() {
             let rest_subgraph = graph.restrict(&rest_remaining);
             let rest_hint = graph.pre(&the_scc).intersect(&rest_remaining);
@@ -113,6 +162,7 @@ fn chain_iterative(
         // Output the scc.
         if !the_scc.is_singleton() {
             // todo this filter should probably be a part of a config/parameter
+            // - or use trimming
             output.push(the_scc);
         }
     }
@@ -411,8 +461,10 @@ mod tests {
 
     #[test]
     fn chain_test() {
-        basic_decomposition(chain);
+        basic_decomposition(|graph| chain(graph, TrimLvl::None));
     }
+
+    use super::TrimLvl;
 
     #[test]
     fn chain_saturation_test() {
@@ -428,7 +480,7 @@ mod tests {
     fn compare_chain_fwd_bwd_basic_graph() {
         let async_graph = basic_async_graph();
 
-        let chain_scc_set = chain(async_graph.clone()).collect::<HashSet<_>>();
+        let chain_scc_set = chain(async_graph.clone(), TrimLvl::None).collect::<HashSet<_>>();
         let fwd_bwd_scc_set = fwd_bwd_scc_decomposition_naive(async_graph).collect::<HashSet<_>>();
 
         assert_eq!(chain_scc_set, fwd_bwd_scc_set);
@@ -485,7 +537,7 @@ mod tests {
 
     #[test_resources("./models/bbm-inputs-true/*.aeon")]
     fn compare_chain_fwd_bwd_selected(model_path: &str) {
-        compare_fn_with_fwd_bwd(model_path, chain);
+        compare_fn_with_fwd_bwd(model_path, |graph| chain(graph, TrimLvl::None));
     }
 
     #[test_resources("./models/bbm-inputs-true/*.aeon")]
