@@ -492,6 +492,7 @@ mod tests {
         I: Iterator<Item = GraphColoredVertices>,
     {
         let bn = BooleanNetwork::try_from_file(model_path).unwrap();
+        let bn = bn.inline_constants(true, true);
 
         let skip_threshold = if cfg!(feature = "expensive-tests") {
             14
