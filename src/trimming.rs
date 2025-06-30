@@ -8,12 +8,20 @@ use biodivine_lib_param_bn::symbolic_async_graph::{GraphColoredVertices, Symboli
 
 // todo consider exposing just a `trim_naive` fn, since we never really call these separately (check)
 
-/// Component of trimming the *"easy to detect"* trivial SCCs (thus
-/// `naive`).
+/// Component of trimming the *easy to detect* trivial SCCs.
 ///
-/// Returns only those states that have successors, therefore may be a member
-/// of a cycle within `set`.
-pub(crate) fn trim_fwd_naive(
+/// Filters out those states from the `set` that do not have a successor
+/// (therefore cannot be a member of a cycle within `set`).
+///
+/// Does this filtering repeatedly, so even *paths* of nodes that do not have a
+/// transitive successor in a cycle will get eliminated.
+///
+/// Returns the rest of the nodes from the `set` - an overapproximation of the
+/// nodes that are in *non-trivial* components.
+///
+/// (A trivial SCC may still be between two non-trivial SCCs - such will not be
+/// detected, hence *overapproximation*)
+pub(crate) fn trim_trailing(
     graph: &SymbolicAsyncGraph,
     set: GraphColoredVertices,
 ) -> GraphColoredVertices {
@@ -34,12 +42,17 @@ pub(crate) fn trim_fwd_naive(
     }
 }
 
-/// Component of trimming the *"easy to detect"* trivial SCCs (thus
-/// `naive`).
+/// Component of trimming the *easy to detect* trivial SCCs.
 ///
-/// Returns only those states that have predecessors, therefore may be a member
-/// of a cycle within `set`.
-pub(crate) fn trim_bwd_naive(
+/// Filters out those states from the `set` that do not have a predecessor
+/// (therefore cannot be a member of a cycle within the `set`).
+///
+/// Returns the rest of the nodes from the `set` - an overapproximation of the
+/// nodes that are in *non-trivial* components.
+///
+/// (A trivial SCC may still be between two non-trivial SCCs - such will not be
+/// detected, hence *overapproximation*)
+pub(crate) fn trim_leading(
     graph: &SymbolicAsyncGraph,
     set: GraphColoredVertices,
 ) -> GraphColoredVertices {
