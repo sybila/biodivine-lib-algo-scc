@@ -143,7 +143,16 @@ fn chain_iterative(
         let fwd_remaining = restrictor(&graph, fwd_remaining);
         if !fwd_remaining.is_empty() {
             let fwd_subgraph = graph.restrict(&fwd_remaining);
-            let fwd_hint = last_fwd_layer.minus(&the_scc);
+
+            // must intersect with `fwd_remaining`; it might have changed
+            // -> no need to `minus scc`; `fwd_remaining` does not contain scc
+
+            // todo `last_layer` and `fwd_remaining` may have diverged
+            //  (`restrictor` fn might have "cut off" the whole
+            //  `last_fwd_layer` part, their intersection might now be empty;
+            //  the alg still can work with *empty hint*, the perf might suffer
+            //  tho)
+            let fwd_hint = last_fwd_layer.intersect(&fwd_remaining);
 
             // "recursive call"
             stack.push((fwd_subgraph, fwd_hint));
@@ -153,6 +162,10 @@ fn chain_iterative(
         let rest_remaining = restrictor(&graph, rest_remaining);
         if !rest_remaining.is_empty() {
             let rest_subgraph = graph.restrict(&rest_remaining);
+
+            // todo same as in the other branch; hint might be empty (even in
+            // cases `rest_subgraph` is nonempty), in cases restrictor trimmed
+            // too much
             let rest_hint = rest_subgraph.pre(&the_scc);
 
             // "recursive call"
@@ -486,6 +499,46 @@ mod tests {
         assert_eq!(chain_scc_set, fwd_bwd_scc_set);
     }
 
+    fn compare_trimming<F, I>(model_path: &str, decomposition_fn: F)
+    where
+        F: Fn(SymbolicAsyncGraph, TrimLvl) -> I,
+        I: Iterator<Item = GraphColoredVertices>,
+    {
+        let bn = BooleanNetwork::try_from_file(model_path).unwrap();
+        let bn = bn.inline_constants(true, true);
+
+        let skip_threshold = if cfg!(feature = "expensive-tests") {
+            14
+        } else {
+            10
+        };
+
+        if bn.num_vars() > skip_threshold {
+            // The network is too large.
+            println!(
+                " >> [{} > {}] Skipping {}.",
+                bn.num_vars(),
+                skip_threshold,
+                model_path
+            );
+            return;
+        }
+
+        // Network has no parameters (no colors).
+        assert_eq!(bn.num_parameters(), 0);
+        assert_eq!(bn.num_implicit_parameters(), 0);
+
+        let graph = SymbolicAsyncGraph::new(&bn).unwrap();
+
+        let sccs_no_trim = decomposition_fn(graph.clone(), TrimLvl::None).collect::<HashSet<_>>();
+        let sccs_single_trim =
+            decomposition_fn(graph.clone(), TrimLvl::StartOnly).collect::<HashSet<_>>();
+        let sccs_full_trim = decomposition_fn(graph, TrimLvl::Full).collect::<HashSet<_>>();
+
+        assert!(sccs_single_trim.is_subset(&sccs_no_trim));
+        assert!(sccs_full_trim.is_subset(&sccs_single_trim))
+    }
+
     fn compare_fn_with_fwd_bwd<F, I>(model_path: &str, decomposition_fn: F)
     where
         F: Fn(SymbolicAsyncGraph) -> I,
@@ -549,5 +602,10 @@ mod tests {
     #[test_resources("./models/bbm-inputs-true/*.aeon")]
     fn compare_chain_saturation_hamming_heuristic_fwd_bwd_selected(model_path: &str) {
         compare_fn_with_fwd_bwd(model_path, chain_saturation_hamming_heuristic);
+    }
+
+    #[test_resources("./models/bbm-inputs-true/*.aeon")]
+    fn compare_trimming_chain(model_path: &str) {
+        compare_trimming(model_path, chain);
     }
 }
