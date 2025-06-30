@@ -188,18 +188,47 @@ fn chain_iterative(
 /// reachability.
 ///
 /// The order of the output sccs is undefined.
-pub fn chain_saturation(graph: SymbolicAsyncGraph) -> impl Iterator<Item = GraphColoredVertices> {
+pub fn chain_saturation(
+    graph: SymbolicAsyncGraph,
+    trim_lvl: TrimLvl,
+) -> impl Iterator<Item = GraphColoredVertices> {
     assert_precondition_graph_not_colored(&graph);
 
-    // `chain_rec` assumes it can pick a pivot -> must not pass in an empty graph
-    match graph.unit_vertices().is_empty() {
-        true => Default::default(),
-        false => {
-            let empty_colored_vertices = graph.empty_colored_vertices().clone();
-            _chain_saturation(
-                graph,
-                empty_colored_vertices, // no hint
-            )
+    const fn identity(_: &SymbolicAsyncGraph, it: GraphColoredVertices) -> GraphColoredVertices {
+        it
+    }
+
+    match trim_lvl {
+        TrimLvl::None => match graph.unit_colored_vertices().is_empty() {
+            true => Default::default(),
+            false => {
+                let no_hint = graph.empty_colored_vertices().clone();
+                _chain_saturation(graph, no_hint, identity)
+            }
+        },
+        TrimLvl::StartOnly => {
+            let trimmed = trim(&graph, graph.unit_colored_vertices().clone());
+            let graph = graph.restrict(&trimmed);
+
+            match graph.unit_colored_vertices().is_empty() {
+                true => Default::default(),
+                false => {
+                    let no_hint = graph.empty_colored_vertices().clone();
+                    _chain_saturation(graph, no_hint, identity)
+                }
+            }
+        }
+        TrimLvl::Full => {
+            let trimmed = trim(&graph, graph.unit_colored_vertices().clone());
+            let graph = graph.restrict(&trimmed);
+
+            match graph.unit_colored_vertices().is_empty() {
+                true => Default::default(),
+                false => {
+                    let no_hint = graph.empty_colored_vertices().clone();
+                    _chain_saturation(graph, no_hint, trim)
+                }
+            }
         }
     }
     .into_iter()
@@ -256,6 +285,7 @@ fn bwd_saturation(
 fn _chain_saturation(
     graph: SymbolicAsyncGraph,
     vertices_hint: GraphColoredVertices,
+    restrictor: fn(&SymbolicAsyncGraph, GraphColoredVertices) -> GraphColoredVertices,
 ) -> Vec<GraphColoredVertices> {
     let mut output = Vec::<GraphColoredVertices>::new();
     let mut stack = vec![(graph, vertices_hint)];
@@ -276,6 +306,7 @@ fn _chain_saturation(
         let scc = bwd_saturation(&graph.restrict(&fwd_reachable), &pivot);
 
         let fwd_remaining = fwd_reachable.minus(&scc);
+        let fwd_remaining = restrictor(&graph, fwd_remaining);
         if !fwd_remaining.is_empty() {
             let fwd_subgraph = graph.restrict(&fwd_remaining);
             // no better estimate in this implementation
@@ -286,6 +317,7 @@ fn _chain_saturation(
         }
 
         let rest_remaining = graph.unit_colored_vertices().minus(&fwd_reachable);
+        let rest_remaining = restrictor(&graph, rest_remaining);
         if !rest_remaining.is_empty() {
             let rest_subgraph = graph.restrict(&rest_remaining);
             let rest_hint = graph.pre(&scc).intersect(&rest_remaining);
@@ -311,21 +343,61 @@ fn _chain_saturation(
 /// The order of the output sccs is undefined.
 pub fn chain_saturation_hamming_heuristic(
     graph: SymbolicAsyncGraph,
+    trim_lvl: TrimLvl,
 ) -> impl Iterator<Item = GraphColoredVertices> {
     assert_precondition_graph_not_colored(&graph);
 
-    // `chain_rec` assumes it can pick a pivot -> must not pass in an empty graph
-    match graph.unit_vertices().is_empty() {
-        true => Default::default(),
-        false => {
-            let empty_colored_vertices = graph.empty_colored_vertices().clone();
-            _chain_saturation_hamming_heuristic(
-                graph,
-                empty_colored_vertices, // no hint
-            )
+    const fn identity(_: &SymbolicAsyncGraph, it: GraphColoredVertices) -> GraphColoredVertices {
+        it
+    }
+
+    match trim_lvl {
+        TrimLvl::None => match graph.unit_colored_vertices().is_empty() {
+            true => Default::default(),
+            false => {
+                let no_hint = graph.empty_colored_vertices().clone();
+                _chain_saturation_hamming_heuristic(graph, no_hint, identity)
+            }
+        },
+        TrimLvl::StartOnly => {
+            let trimmed = trim(&graph, graph.unit_colored_vertices().clone());
+            let graph = graph.restrict(&trimmed);
+
+            match graph.unit_colored_vertices().is_empty() {
+                true => Default::default(),
+                false => {
+                    let no_hint = graph.empty_colored_vertices().clone();
+                    _chain_saturation_hamming_heuristic(graph, no_hint, identity)
+                }
+            }
+        }
+        TrimLvl::Full => {
+            let trimmed = trim(&graph, graph.unit_colored_vertices().clone());
+            let graph = graph.restrict(&trimmed);
+
+            match graph.unit_colored_vertices().is_empty() {
+                true => Default::default(),
+                false => {
+                    let no_hint = graph.empty_colored_vertices().clone();
+                    _chain_saturation_hamming_heuristic(graph, no_hint, trim)
+                }
+            }
         }
     }
     .into_iter()
+
+    // // `chain_rec` assumes it can pick a pivot -> must not pass in an empty graph
+    // match graph.unit_vertices().is_empty() {
+    //     true => Default::default(),
+    //     false => {
+    //         let empty_colored_vertices = graph.empty_colored_vertices().clone();
+    //         _chain_saturation_hamming_heuristic(
+    //             graph,
+    //             empty_colored_vertices, // no hint
+    //         )
+    //     }
+    // }
+    // .into_iter()
 }
 
 // todo consider adding `chain_hamming_heuristic`? - to have the full
@@ -335,6 +407,7 @@ pub fn chain_saturation_hamming_heuristic(
 fn _chain_saturation_hamming_heuristic(
     graph: SymbolicAsyncGraph,
     vertices_hint: GraphColoredVertices,
+    restrictor: fn(&SymbolicAsyncGraph, GraphColoredVertices) -> GraphColoredVertices,
 ) -> Vec<GraphColoredVertices> {
     let graph = graph.clone();
     let vertices_hint = vertices_hint.clone();
@@ -358,6 +431,7 @@ fn _chain_saturation_hamming_heuristic(
         let scc = bwd_saturation(&graph.restrict(&fwd_reachable), &pivot);
 
         let fwd_remaining = fwd_reachable.minus(&scc);
+        let fwd_remaining = restrictor(&graph, fwd_remaining);
         if !fwd_remaining.is_empty() {
             let fwd_subgraph = graph.restrict(&fwd_remaining);
 
@@ -368,6 +442,7 @@ fn _chain_saturation_hamming_heuristic(
         }
 
         let rest_remaining = graph.unit_colored_vertices().minus(&fwd_reachable);
+        let rest_remaining = restrictor(&graph, rest_remaining);
         if !rest_remaining.is_empty() {
             let rest_subgraph = graph.restrict(&rest_remaining);
             let rest_hint = graph.pre(&scc).intersect(&rest_remaining);
@@ -481,12 +556,12 @@ mod tests {
 
     #[test]
     fn chain_saturation_test() {
-        basic_decomposition(chain_saturation);
+        basic_decomposition(|graph| chain_saturation(graph, TrimLvl::None));
     }
 
     #[test]
     fn chain_saturation_hamming_heuristic_test() {
-        basic_decomposition(chain_saturation_hamming_heuristic);
+        basic_decomposition(|graph| chain_saturation_hamming_heuristic(graph, TrimLvl::None));
     }
 
     #[test]
@@ -596,16 +671,81 @@ mod tests {
 
     #[test_resources("./models/bbm-inputs-true/*.aeon")]
     fn compare_chain_saturation_fwd_bwd_selected(model_path: &str) {
-        compare_fn_with_fwd_bwd(model_path, chain_saturation);
+        compare_fn_with_fwd_bwd(model_path, |graph| chain_saturation(graph, TrimLvl::None));
     }
 
     #[test_resources("./models/bbm-inputs-true/*.aeon")]
     fn compare_chain_saturation_hamming_heuristic_fwd_bwd_selected(model_path: &str) {
-        compare_fn_with_fwd_bwd(model_path, chain_saturation_hamming_heuristic);
+        compare_fn_with_fwd_bwd(model_path, |graph| {
+            chain_saturation_hamming_heuristic(graph, TrimLvl::None)
+        });
     }
 
     #[test_resources("./models/bbm-inputs-true/*.aeon")]
     fn compare_trimming_chain(model_path: &str) {
         compare_trimming(model_path, chain);
+    }
+
+    #[test_resources("./models/bbm-inputs-true/*.aeon")]
+    fn compare_trimming_saturation(model_path: &str) {
+        compare_trimming(model_path, chain_saturation);
+    }
+
+    #[test_resources("./models/bbm-inputs-true/*.aeon")]
+    fn compare_trimming_hamming(model_path: &str) {
+        compare_trimming(model_path, chain_saturation_hamming_heuristic);
+    }
+
+    fn compare_all_trimmings(model_path: &str, trim_lvl: TrimLvl) {
+        let bn = BooleanNetwork::try_from_file(model_path).unwrap();
+        let bn = bn.inline_constants(true, true);
+
+        let skip_threshold = if cfg!(feature = "expensive-tests") {
+            14
+        } else {
+            10
+        };
+
+        if bn.num_vars() > skip_threshold {
+            // The network is too large.
+            println!(
+                " >> [{} > {}] Skipping {}.",
+                bn.num_vars(),
+                skip_threshold,
+                model_path
+            );
+            return;
+        }
+
+        // Network has no parameters (no colors).
+        assert_eq!(bn.num_parameters(), 0);
+        assert_eq!(bn.num_implicit_parameters(), 0);
+
+        let graph = SymbolicAsyncGraph::new(&bn).unwrap();
+
+        println!(
+            " >> [{} <= {}] Testing {}.",
+            bn.num_vars(),
+            skip_threshold,
+            model_path
+        );
+
+        let chain_start_only = chain(graph.clone(), trim_lvl).collect::<HashSet<_>>();
+        let sat_start_only = chain_saturation(graph.clone(), trim_lvl).collect::<HashSet<_>>();
+        let sat_ham_start_only =
+            chain_saturation_hamming_heuristic(graph, trim_lvl).collect::<HashSet<_>>();
+
+        assert_eq!(chain_start_only, sat_start_only);
+        assert_eq!(sat_start_only, sat_ham_start_only);
+    }
+
+    #[test_resources("./models/bbm-inputs-true/*.aeon")]
+    fn compare_trimming_start_only(model_path: &str) {
+        compare_all_trimmings(model_path, TrimLvl::StartOnly);
+    }
+
+    #[test_resources("./models/bbm-inputs-true/*.aeon")]
+    fn compare_trimming_full(model_path: &str) {
+        compare_all_trimmings(model_path, TrimLvl::Full);
     }
 }
