@@ -4,9 +4,8 @@
 //! candidate set (as such, it cannot be a member of any cycle).
 //!
 use biodivine_lib_param_bn::biodivine_std::traits::Set;
-use biodivine_lib_param_bn::symbolic_async_graph::{GraphColoredVertices, SymbolicAsyncGraph};
-
-// todo consider exposing just a `trim_naive` fn, since we never really call these separately (check)
+use biodivine_lib_param_bn::symbolic_async_graph::GraphColoredVertices;
+use biodivine_lib_param_bn::symbolic_async_graph::SymbolicAsyncGraph;
 
 /// Component of trimming the *easy to detect* trivial SCCs.
 ///

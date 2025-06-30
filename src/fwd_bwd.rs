@@ -1,10 +1,9 @@
 //! used just for integration tests - to compare the output of chain on large (non-manual) datasets
 
 use crate::assert_precondition_graph_not_colored;
-use biodivine_lib_param_bn::{
-    biodivine_std::traits::Set,
-    symbolic_async_graph::{GraphColoredVertices, SymbolicAsyncGraph},
-};
+use biodivine_lib_param_bn::biodivine_std::traits::Set;
+use biodivine_lib_param_bn::symbolic_async_graph::GraphColoredVertices;
+use biodivine_lib_param_bn::symbolic_async_graph::SymbolicAsyncGraph;
 
 pub fn fwd_bwd_scc_decomposition_naive(
     graph: SymbolicAsyncGraph,

@@ -1,5 +1,8 @@
 use biodivine_lib_param_bn::symbolic_async_graph::SymbolicAsyncGraph;
 use biodivine_lib_param_bn::BooleanNetwork;
+use cejn::chain::chain;
+use cejn::chain::Config;
+use cejn::chain::Strategy;
 
 fn main() {
     let args = std::env::args().collect::<Vec<_>>();
@@ -11,10 +14,10 @@ fn main() {
 
     println!("Loaded BN with {} variables.", bn.num_vars());
 
-    let mut scc_list = cejn::chain::chain(
+    let mut scc_list = chain(
         graph,
-        cejn::chain::Config {
-            strategy: cejn::chain::Strategy::Saturation,
+        Config {
+            strategy: Strategy::Saturation,
             ..Default::default()
         },
     )

@@ -38,12 +38,13 @@ pub fn chain(
         .into_iter()
 }
 
-use biodivine_lib_param_bn::{
-    biodivine_std::traits::Set,
-    symbolic_async_graph::{GraphColoredVertices, SymbolicAsyncGraph},
-};
+use biodivine_lib_param_bn::biodivine_std::traits::Set;
+use biodivine_lib_param_bn::symbolic_async_graph::GraphColoredVertices;
+use biodivine_lib_param_bn::symbolic_async_graph::SymbolicAsyncGraph;
 
-use crate::{assert_precondition_graph_not_colored, hamming::Hamming, trimming::trim};
+use crate::assert_precondition_graph_not_colored;
+use crate::hamming::Hamming;
+use crate::trimming::trim;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub enum TrimLvl {
@@ -384,20 +385,15 @@ fn _chain_saturation_hamming_heuristic(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
-
-    use biodivine_lib_param_bn::{
-        biodivine_std::traits::Set,
-        symbolic_async_graph::{GraphColoredVertices, SymbolicAsyncGraph},
-        BooleanNetwork,
-    };
+    use super::*;
+    use crate::fwd_bwd::fwd_bwd_scc_decomposition_naive;
+    use biodivine_lib_param_bn::biodivine_std::traits::Set;
+    use biodivine_lib_param_bn::symbolic_async_graph::GraphColoredVertices;
+    use biodivine_lib_param_bn::symbolic_async_graph::SymbolicAsyncGraph;
+    use biodivine_lib_param_bn::BooleanNetwork;
     use num_bigint::BigInt;
+    use std::collections::HashSet;
     use test_generator::test_resources;
-
-    use crate::{
-        chain::{chain, Config, Strategy},
-        fwd_bwd::fwd_bwd_scc_decomposition_naive,
-    };
 
     fn basic_async_graph() -> SymbolicAsyncGraph {
         let bool_network = BooleanNetwork::try_from(

@@ -1,7 +1,9 @@
-use biodivine_lib_bdd::{Bdd, BddPointer, BddValuation, BddVariable};
-use biodivine_lib_param_bn::{
-    biodivine_std::traits::Set, symbolic_async_graph::GraphColoredVertices,
-};
+use biodivine_lib_bdd::Bdd;
+use biodivine_lib_bdd::BddPointer;
+use biodivine_lib_bdd::BddValuation;
+use biodivine_lib_bdd::BddVariable;
+use biodivine_lib_param_bn::biodivine_std::traits::Set;
+use biodivine_lib_param_bn::symbolic_async_graph::GraphColoredVertices;
 
 pub trait Hamming {
     fn ham_furthest_within(&self, choice_set: &GraphColoredVertices) -> GraphColoredVertices;
@@ -240,9 +242,9 @@ fn rec_max_dist_path(
 
 #[cfg(test)]
 mod tests {
-    use biodivine_lib_param_bn::{
-        biodivine_std::traits::Set, symbolic_async_graph::SymbolicAsyncGraph, BooleanNetwork,
-    };
+    use biodivine_lib_param_bn::biodivine_std::traits::Set;
+    use biodivine_lib_param_bn::symbolic_async_graph::SymbolicAsyncGraph;
+    use biodivine_lib_param_bn::BooleanNetwork;
 
     use crate::hamming::Hamming;
 
