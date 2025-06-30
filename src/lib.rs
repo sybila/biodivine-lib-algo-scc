@@ -54,7 +54,7 @@ mod tests {
         let some_id = rg.find_variable("A").unwrap();
         let xd = &rg[some_id];
 
-        println!("{:?}", xd);
+        println!("{xd:?}");
 
         Ok(())
     }

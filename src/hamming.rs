@@ -308,6 +308,6 @@ mod tests {
             .sat_valuations()
             .collect::<Vec<_>>();
 
-        println!("{:?}", valuations);
+        println!("{valuations:?}");
     }
 }
