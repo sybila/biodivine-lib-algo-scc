@@ -153,7 +153,7 @@ fn chain_iterative(
         let rest_remaining = restrictor(&graph, rest_remaining);
         if !rest_remaining.is_empty() {
             let rest_subgraph = graph.restrict(&rest_remaining);
-            let rest_hint = graph.pre(&the_scc).intersect(&rest_remaining);
+            let rest_hint = rest_subgraph.pre(&the_scc);
 
             // "recursive call"
             stack.push((rest_subgraph, rest_hint));
