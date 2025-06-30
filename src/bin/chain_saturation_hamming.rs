@@ -1,5 +1,6 @@
 use biodivine_lib_param_bn::symbolic_async_graph::SymbolicAsyncGraph;
 use biodivine_lib_param_bn::BooleanNetwork;
+use cejn::chain::{Config, Strategy};
 
 fn main() {
     let args = std::env::args().collect::<Vec<_>>();
@@ -11,8 +12,14 @@ fn main() {
 
     println!("Loaded BN with {} variables.", bn.num_vars());
 
-    let mut scc_list = cejn::chain::chain_saturation_hamming_heuristic(graph, Default::default())
-        .collect::<Vec<_>>();
+    let mut scc_list = cejn::chain::chain(
+        graph,
+        Config {
+            strategy: Strategy::SaturationHamming,
+            ..Default::default()
+        },
+    )
+    .collect::<Vec<_>>();
     scc_list.sort_by_key(|it| it.exact_cardinality());
 
     let trivial = scc_list.iter().filter(|it| it.is_singleton()).count();
