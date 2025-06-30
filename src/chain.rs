@@ -1,3 +1,43 @@
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Config {
+    pub trim_lvl: TrimLvl,
+    pub strategy: Strategy,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub enum Strategy {
+    #[default]
+    Chain,
+    Saturation,
+    SaturationHamming,
+}
+
+type DecompositionFn = fn(
+    SymbolicAsyncGraph,
+    GraphColoredVertices,
+    fn(&SymbolicAsyncGraph, GraphColoredVertices) -> GraphColoredVertices,
+) -> Vec<GraphColoredVertices>;
+
+impl Strategy {
+    const fn associated_decomposition_fn(&self) -> DecompositionFn {
+        match self {
+            Self::Chain => chain_iterative,
+            Self::Saturation => _chain_saturation,
+            Self::SaturationHamming => _chain_saturation_hamming_heuristic,
+        }
+    }
+}
+
+pub fn chain(
+    graph: SymbolicAsyncGraph,
+    config: Config,
+) -> impl Iterator<Item = GraphColoredVertices> {
+    config
+        .trim_lvl
+        .start_decomposition(graph, config.strategy.associated_decomposition_fn())
+        .into_iter()
+}
+
 use biodivine_lib_param_bn::{
     biodivine_std::traits::Set,
     symbolic_async_graph::{GraphColoredVertices, SymbolicAsyncGraph},
@@ -20,58 +60,57 @@ pub enum TrimLvl {
     Full,
 }
 
-/// does the decomposition of the graph to SCCs
-/// should be made iterative sometime in the future
-/// should also be remade not to return `Vec`
-/// also the "metadata" about the graph would be needlessly duplicated this way
-/// also colored version wanted (as another method)
-///
-/// The order of the output sccs is undefined.
-pub fn chain(
-    graph: SymbolicAsyncGraph,
-    trim_lvl: TrimLvl,
-) -> impl Iterator<Item = GraphColoredVertices> {
-    assert_precondition_graph_not_colored(&graph);
+impl TrimLvl {
+    fn start_decomposition(
+        &self,
+        graph: SymbolicAsyncGraph,
+        decomposition_fn: impl Fn(
+            SymbolicAsyncGraph,
+            GraphColoredVertices,
+            fn(&SymbolicAsyncGraph, GraphColoredVertices) -> GraphColoredVertices,
+        ) -> Vec<GraphColoredVertices>,
+    ) -> Vec<GraphColoredVertices> {
+        const fn identity(
+            _: &SymbolicAsyncGraph,
+            it: GraphColoredVertices,
+        ) -> GraphColoredVertices {
+            it
+        }
 
-    const fn identity(_: &SymbolicAsyncGraph, it: GraphColoredVertices) -> GraphColoredVertices {
-        it
-    }
-
-    match trim_lvl {
-        TrimLvl::None => match graph.unit_vertices().is_empty() {
-            true => Default::default(),
-            false => {
-                let no_hint = graph.empty_colored_vertices().clone();
-
-                chain_iterative(graph, no_hint, /* noop - no trim */ identity)
-            }
-        },
-        TrimLvl::StartOnly => {
-            let trimmed = trim(&graph, graph.unit_colored_vertices().clone());
-            let graph = graph.restrict(&trimmed);
-
-            match graph.unit_vertices().is_empty() {
+        match self {
+            TrimLvl::None => match graph.unit_vertices().is_empty() {
                 true => Default::default(),
                 false => {
                     let no_hint = graph.empty_colored_vertices().clone();
-                    chain_iterative(graph, no_hint, /* noop - no trim */ identity)
+                    decomposition_fn(graph, no_hint, /* noop - no trim */ identity)
+                }
+            },
+            TrimLvl::StartOnly => {
+                let trimmed = trim(&graph, graph.unit_colored_vertices().clone());
+                let graph = graph.restrict(&trimmed);
+
+                match graph.unit_vertices().is_empty() {
+                    true => Default::default(),
+                    false => {
+                        let no_hint = graph.empty_colored_vertices().clone();
+                        decomposition_fn(graph, no_hint, /* noop - no trim */ identity)
+                    }
                 }
             }
-        }
-        TrimLvl::Full => {
-            let trimmed = trim(&graph, graph.unit_colored_vertices().clone());
-            let graph = graph.restrict(&trimmed);
+            TrimLvl::Full => {
+                let trimmed = trim(&graph, graph.unit_colored_vertices().clone());
+                let graph = graph.restrict(&trimmed);
 
-            match graph.unit_vertices().is_empty() {
-                true => Default::default(),
-                false => {
-                    let no_hint = graph.empty_colored_vertices().clone();
-                    chain_iterative(graph, no_hint, /* trim every iteration */ trim)
+                match graph.unit_vertices().is_empty() {
+                    true => Default::default(),
+                    false => {
+                        let no_hint = graph.empty_colored_vertices().clone();
+                        decomposition_fn(graph, no_hint, trim)
+                    }
                 }
             }
         }
     }
-    .into_iter()
 }
 
 /// the chain decomposition
@@ -473,7 +512,7 @@ mod tests {
     use test_generator::test_resources;
 
     use crate::{
-        chain::{chain, chain_saturation, chain_saturation_hamming_heuristic},
+        chain::{chain, chain_saturation, chain_saturation_hamming_heuristic, Config, Strategy},
         fwd_bwd::fwd_bwd_scc_decomposition_naive,
     };
 
@@ -549,7 +588,15 @@ mod tests {
 
     #[test]
     fn chain_test() {
-        basic_decomposition(|graph| chain(graph, TrimLvl::None));
+        basic_decomposition(|graph| {
+            chain(
+                graph,
+                Config {
+                    strategy: Strategy::Chain,
+                    trim_lvl: TrimLvl::None,
+                },
+            )
+        });
     }
 
     use super::TrimLvl;
@@ -568,7 +615,14 @@ mod tests {
     fn compare_chain_fwd_bwd_basic_graph() {
         let async_graph = basic_async_graph();
 
-        let chain_scc_set = chain(async_graph.clone(), TrimLvl::None).collect::<HashSet<_>>();
+        let chain_scc_set = chain(
+            async_graph.clone(),
+            Config {
+                strategy: Strategy::Chain,
+                trim_lvl: TrimLvl::None,
+            },
+        )
+        .collect::<HashSet<_>>();
         let fwd_bwd_scc_set = fwd_bwd_scc_decomposition_naive(async_graph).collect::<HashSet<_>>();
 
         assert_eq!(chain_scc_set, fwd_bwd_scc_set);
@@ -666,7 +720,15 @@ mod tests {
 
     #[test_resources("./models/bbm-inputs-true/*.aeon")]
     fn compare_chain_fwd_bwd_selected(model_path: &str) {
-        compare_fn_with_fwd_bwd(model_path, |graph| chain(graph, TrimLvl::None));
+        compare_fn_with_fwd_bwd(model_path, |graph| {
+            chain(
+                graph,
+                Config {
+                    trim_lvl: TrimLvl::None,
+                    strategy: Strategy::Chain,
+                },
+            )
+        });
     }
 
     #[test_resources("./models/bbm-inputs-true/*.aeon")]
@@ -683,7 +745,15 @@ mod tests {
 
     #[test_resources("./models/bbm-inputs-true/*.aeon")]
     fn compare_trimming_chain(model_path: &str) {
-        compare_trimming(model_path, chain);
+        compare_trimming(model_path, |graph, trim_lvl| {
+            chain(
+                graph,
+                Config {
+                    trim_lvl,
+                    strategy: Strategy::Chain,
+                },
+            )
+        })
     }
 
     #[test_resources("./models/bbm-inputs-true/*.aeon")]
@@ -730,7 +800,14 @@ mod tests {
             model_path
         );
 
-        let chain_start_only = chain(graph.clone(), trim_lvl).collect::<HashSet<_>>();
+        let chain_start_only = chain(
+            graph.clone(),
+            Config {
+                trim_lvl: TrimLvl::None,
+                strategy: Strategy::Chain,
+            },
+        )
+        .collect::<HashSet<_>>();
         let sat_start_only = chain_saturation(graph.clone(), trim_lvl).collect::<HashSet<_>>();
         let sat_ham_start_only =
             chain_saturation_hamming_heuristic(graph, trim_lvl).collect::<HashSet<_>>();
