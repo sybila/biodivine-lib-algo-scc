@@ -16,12 +16,12 @@ fn assert_precondition_graph_not_colored(graph: &SymbolicAsyncGraph) {
 
 #[cfg(test)]
 mod tests {
-    use biodivine_lib_param_bn::biodivine_std::traits::Set;
-    use biodivine_lib_param_bn::symbolic_async_graph::SymbolicAsyncGraph;
     use biodivine_lib_param_bn::BooleanNetwork;
     use biodivine_lib_param_bn::Monotonicity;
     use biodivine_lib_param_bn::Regulation;
     use biodivine_lib_param_bn::RegulatoryGraph;
+    use biodivine_lib_param_bn::biodivine_std::traits::Set;
+    use biodivine_lib_param_bn::symbolic_async_graph::SymbolicAsyncGraph;
 
     #[test]
     fn lib_param_bn_tryout() -> Result<(), String> {

@@ -1,8 +1,8 @@
-use biodivine_lib_param_bn::symbolic_async_graph::SymbolicAsyncGraph;
+use biodivine_lib_algo_scc::chain::Config;
+use biodivine_lib_algo_scc::chain::Strategy;
+use biodivine_lib_algo_scc::chain::chain;
 use biodivine_lib_param_bn::BooleanNetwork;
-use cejn::chain::chain;
-use cejn::chain::Config;
-use cejn::chain::Strategy;
+use biodivine_lib_param_bn::symbolic_async_graph::SymbolicAsyncGraph;
 
 fn main() {
     let args = std::env::args().collect::<Vec<_>>();

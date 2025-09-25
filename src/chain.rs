@@ -387,11 +387,11 @@ fn _chain_saturation_hamming_heuristic(
 mod tests {
     use super::*;
     use crate::fwd_bwd::fwd_bwd_scc_decomposition_naive;
+    use biodivine_lib_param_bn::BooleanNetwork;
     use biodivine_lib_param_bn::biodivine_std::traits::Set;
     use biodivine_lib_param_bn::symbolic_async_graph::GraphColoredVertices;
     use biodivine_lib_param_bn::symbolic_async_graph::SymbolicAsyncGraph;
-    use biodivine_lib_param_bn::BooleanNetwork;
-    use num_bigint::BigInt;
+    use num_bigint::{BigInt, BigUint};
     use std::collections::HashSet;
     use test_generator::test_resources;
 
@@ -426,27 +426,27 @@ mod tests {
         let a_false = unit_set.fix_network_variable(var_a, false);
         let b_false = unit_set.fix_network_variable(var_b, false);
 
-        assert_eq!(a_true.exact_cardinality(), BigInt::from(2));
-        assert_eq!(b_true.exact_cardinality(), BigInt::from(2));
-        assert_eq!(a_false.exact_cardinality(), BigInt::from(2));
-        assert_eq!(b_false.exact_cardinality(), BigInt::from(2));
+        assert_eq!(a_true.exact_cardinality(), BigUint::from(2u32));
+        assert_eq!(b_true.exact_cardinality(), BigUint::from(2u32));
+        assert_eq!(a_false.exact_cardinality(), BigUint::from(2u32));
+        assert_eq!(b_false.exact_cardinality(), BigUint::from(2u32));
 
         let false_false = a_false.intersect(&b_false);
         let false_true = a_false.intersect(&b_true);
         let true_false = a_true.intersect(&b_false);
         let true_true = a_true.intersect(&b_true);
 
-        assert_eq!(false_false.exact_cardinality(), BigInt::from(1));
-        assert_eq!(false_true.exact_cardinality(), BigInt::from(1));
-        assert_eq!(true_false.exact_cardinality(), BigInt::from(1));
-        assert_eq!(true_true.exact_cardinality(), BigInt::from(1));
+        assert_eq!(false_false.exact_cardinality(), BigUint::from(1u32));
+        assert_eq!(false_true.exact_cardinality(), BigUint::from(1u32));
+        assert_eq!(true_false.exact_cardinality(), BigUint::from(1u32));
+        assert_eq!(true_true.exact_cardinality(), BigUint::from(1u32));
 
         let false_false_post = async_graph.post(&false_false);
-        assert_eq!(false_false_post.exact_cardinality(), BigInt::from(1));
+        assert_eq!(false_false_post.exact_cardinality(), BigUint::from(1u32));
         assert_eq!(false_false_post, true_false);
 
         let a_false_post = async_graph.post(&a_false);
-        assert_eq!(a_false_post.exact_cardinality(), BigInt::from(2));
+        assert_eq!(a_false_post.exact_cardinality(), BigUint::from(2u32));
         assert_eq!(a_false_post, a_true);
 
         // the chain part
