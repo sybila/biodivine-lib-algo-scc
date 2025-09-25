@@ -391,7 +391,7 @@ mod tests {
     use biodivine_lib_param_bn::biodivine_std::traits::Set;
     use biodivine_lib_param_bn::symbolic_async_graph::GraphColoredVertices;
     use biodivine_lib_param_bn::symbolic_async_graph::SymbolicAsyncGraph;
-    use num_bigint::{BigInt, BigUint};
+    use num_bigint::BigUint;
     use std::collections::HashSet;
     use test_generator::test_resources;
 
