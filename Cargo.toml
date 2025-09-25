@@ -1,25 +1,21 @@
 [package]
-name = "cejn"
+name = "biodivine-lib-algo-scc"
 version = "0.1.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+edition = "2024"
 
 [features]
 expensive-tests = []
 
 [dependencies]
-# todo bump
-biodivine-lib-bdd = "0.5.13"
-biodivine-lib-param-bn = "0.5.10"
-num-bigint = "0.4.4"
-smallvec = "1.15.1"
+biodivine-lib-bdd = ">=0.6.2, <1.0.0"
+biodivine-lib-param-bn = ">=0.6.2, <1.0.0"
+num-bigint = "0.4"
 
 [dev-dependencies]
 test-generator = "0.3.1"
 
 [lib]
-name = "cejn"
+name = "biodivine_lib_algo_scc"
 path = "src/lib.rs"
 
 [[bin]]
