@@ -139,6 +139,11 @@ impl ItgrState {
     pub fn active_variables(&self) -> impl Iterator<Item = VariableId> {
         self.remaining_reachability.active_variables.iter().copied()
     }
+
+    /// A reference to the set of remaining states (i.e., those that haven't been eliminated yet).
+    pub fn remaining(&self) -> &GraphColoredVertices {
+        &self.remaining_set
+    }
 }
 
 impl ComputationStep<AttractorConfig, ItgrState, GraphColoredVertices> for ItgrStep {

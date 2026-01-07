@@ -47,6 +47,14 @@ struct StepAttractor {
     future_pivots: GraphColoredVertices,
 }
 
+impl XieBeerelState {
+    /// A reference to the set of remaining states (i.e., those that can still contain some
+    /// attractors).
+    pub fn remaining(&self) -> &GraphColoredVertices {
+        &self.remaining
+    }
+}
+
 impl GeneratorStep<AttractorConfig, XieBeerelState, GraphColoredVertices> for XieBeerelStep {
     fn step(
         context: &AttractorConfig,
